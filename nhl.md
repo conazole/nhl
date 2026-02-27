@@ -182,7 +182,15 @@ honorable mentions: (6-6.9 confidence)
 avoid: (high-scoring matchups)
 ```
 
-### 9. save all games to log
+### 9. email report
+
+after displaying the report, send it to `bk.conazole@icloud.com` via macOS Mail using applescript:
+- subject: "nhl 1p u2.5 — {date}"
+- body: the full report (league baseline, per-game analysis tables, final 2-leg parlay, honorable mentions, avoids, season record) as plain text
+- use `osascript` to compose and send via Mail.app
+- do not regenerate the report — use the exact same output already displayed
+
+### 10. save all games to log
 
 after outputting the final recommendation, save ALL analyzed games to `/Users/raz/claude/nhl/picks_log.jsonl` — picks, honorable mentions, and avoids. append one json line per game:
 
