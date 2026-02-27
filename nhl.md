@@ -184,11 +184,42 @@ avoid: (high-scoring matchups)
 
 ### 9. email report
 
-after displaying the report, send it to `bk.conazole@icloud.com` via macOS Mail using applescript:
+send a **concise, human-readable** summary to `bk.conazole@icloud.com` via macOS Mail using applescript.
+
+**important**: the email is NOT the terminal output. it's a clean, scannable version for reading on a phone.
+
 - subject: "nhl 1p u2.5 — {date}"
-- body: the full report (league baseline, per-game analysis tables, final 2-leg parlay, honorable mentions, avoids, season record) as plain text
 - use `osascript` to compose and send via Mail.app
-- do not regenerate the report — use the exact same output already displayed
+
+**email format:**
+```
+nhl 1p u2.5 — {month} {day}, {year}
+
+2-leg parlay:
+
+1. {away} @ {home} — 1p u2.5 ({confidence}/10)
+   {1-2 sentence reason why this hits}
+
+2. {away} @ {home} — 1p u2.5 ({confidence}/10)
+   {1-2 sentence reason why this hits}
+
+season record: {x}-{y} parlays | {x}-{y} individual legs
+
+---
+
+honorable mention:
+- {game} — {1 sentence}
+
+---
+
+sent from /nhl
+```
+
+rules for the email:
+- just the 2-leg parlay, reason per pick, season record
+- no tables, no poisson breakdowns, no 15-game logs
+- include honorable mentions briefly, skip avoids
+- keep it under 20 lines total
 
 ### 10. save all games to log
 
