@@ -171,7 +171,7 @@ confidence: x/10
 output:
 
 ```
-## tonight's picks (confidence ≥ 7)
+## final 2-leg parlay
 
 | pick | confidence | poisson | key factors |
 | ---- | ---------- | ------- | ----------- |
@@ -206,8 +206,8 @@ use `Edit` to append if the file exists, or `Write` to create it. do not overwri
 ## rules
 - all output must be in lowercase. every single word, header, label, sentence — all lowercase. no exceptions.
 - only recommend confidence >= 7/10
-- present ALL qualifying picks (confidence >= 7) — do not limit to 2. user decides how to combine them.
-- do not calculate or factor in parlay odds — the user handles parlay construction and bankroll. our only job is to find the most likely outcomes.
+- max 2 legs for the parlay (top 2 only) — this is the "lock" 2-leg parlay we track season record on
+- always include honorable mentions (6-6.9) and avoids (<6) so we can track and learn from them over time
 - if nothing hits 7, say "no play tonight"
 - tag every pick with supporting factors
 - flag outdoor/stadium series games as abnormal
