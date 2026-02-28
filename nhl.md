@@ -51,33 +51,26 @@ honorable mentions: x-y would-have-won (zz%) — if consistently high, consider 
 
 if the log doesn't exist or there are no unresolved entries, skip this step silently.
 
-### 2. get tonight's games
+### 2-4. run the analysis script (data fetch + deterministic computation)
 
-write and run a python script. fetch `https://api-web.nhle.com/v1/score/now` to see tonight's slate. if games haven't posted yet, use `https://api-web.nhle.com/v1/schedule/now` for the week's schedule. map every game: away @ home, noting which team is home and which is away.
+run the saved script `nhl_analysis.py` which handles steps 2, 3, 4, and 6 in one deterministic pass:
 
-### 3. get last 15 1p scores for every team playing tonight
+```bash
+python3 nhl_analysis.py --date YYYY-MM-DD
+```
 
-this is the foundation — the most critical step. use endpoint: `https://api-web.nhle.com/v1/score/{YYYY-MM-DD}`
+this script:
+- fetches tonight's games from the nhl api
+- walks backward up to 60 days to collect 15 games per team
+- tracks league-wide u2.5 base rate from all games encountered
+- detects h2h matchups and b2b situations
+- computes weighted poisson probabilities (exponential decay, most recent=1.0, oldest=0.4)
+- computes deterministic confidence sub-scores (r5, r15, poisson, b2b — up to 8/10)
+- outputs structured json to stdout
 
-this returns all games for that date with a `goals[]` array. each goal has:
-- `period` (integer: 1, 2, 3, 4=ot, 5=so)
-- `teamAbbrev` (e.g. "car")
-- `timeInPeriod` ("mm:ss")
+**do NOT rewrite or regenerate this script. run it as-is.** the whole point is deterministic, reproducible output. if the script needs updates, edit the saved file — never write a one-off replacement.
 
-count period==1 goals per team to get 1p score. only count games where `gameState` is "OFF" or "FINAL".
-
-**optimize**: write a single python script that walks backward one date at a time starting from yesterday. fetch each date once and scan for all teams needing games. stop when every team has **15 games**. set max lookback to **60 days**. cache date results so you don't re-fetch. note: olympic break was feb 7-22, 2026 — no nhl games during that window, so you may jump across it depending on the date.
-
-for each game found, record:
-- date, opponent, home/away, 1p goals for, 1p goals against, total 1p goals, u2.5 (yes/no)
-
-also track:
-- **h2h games**: if both teams in any of tonight's matchups played each other within the window, flag those games separately
-- **league-wide totals**: count total games fetched and total u2.5 outcomes across all games (not just teams playing tonight — every completed game you encounter while walking dates)
-
-### 4. back-to-back detection
-
-check if any team playing tonight also played yesterday using yesterday's score data (already fetched in step 3).
+parse the json output and use it for all subsequent steps. the json contains per-team 15-game histories, stats, poisson values, and confidence sub-scores.
 
 ### 5. goalie & injury check
 
@@ -89,43 +82,21 @@ check if any team playing tonight also played yesterday using yesterday's score 
 - run a single `WebSearch` for "nhl injuries today [date]" to get key absences (top-6 f, #1 g, top-pair d)
 - do not use a broad agent for this — one focused search is enough
 
-### 6. compute analysis metrics
+### 6. add subjective factors to confidence
 
-write and run a python script that computes all of the following from the data collected in step 3:
+the script outputs a deterministic subtotal out of 8. claude adds the remaining 2 points:
 
-**a. league-wide base rate**
-- total u2.5 games / total completed games across all dates fetched
-- this is the baseline everything is measured against
-
-**b. per-team stats (for each team playing tonight)**
-- last 5 games: u2.5 count, u2.5 %, avg 1p goals
-- last 15 games: u2.5 count, u2.5 %, avg 1p goals
-- venue split (h or a matching tonight's role): u2.5 count out of matching games, u2.5 %
-
-**c. head-to-head**
-- if tonight's opponents played each other within the 15-game window, show up to 3 most recent h2h 1p results
-
-**d. poisson model (weighted)**
-- for each team, compute a **weighted 1p goals-for rate** from their 15-game sample:
-  - apply exponential decay weights: most recent game = 1.0, oldest (15th) game = 0.4
-  - weight formula: `w = 0.4 + 0.6 * ((15 - i) / 14)` where i=0 is oldest, i=14 is most recent
-  - weighted avg = sum(goals_for * weight) / sum(weights)
-- for each matchup: team a's weighted goals-for rate = lambda_a, team b's weighted goals-for rate = lambda_b
-- p(total 1p goals <= 2) = sum over all (a,b) where a+b<=2 of: poisson(a, lambda_a) * poisson(b, lambda_b)
-- show: poisson probability, base rate, edge (poisson - base rate)
-
-**e. systematic confidence score**
-for each game, compute a transparent confidence score:
-
-| factor | criteria | points |
+| factor | source | points |
 | --- | --- | --- |
-| combined recent 5 u2.5 rate | 0-49%: 0, 50-69%: 1, 70-89%: 2, 90-100%: 3 | 0-3 |
-| combined 15-game u2.5 rate | 0-49%: 0, 50-64%: 1, 65-100%: 2 | 0-2 |
-| poisson p(u2.5) | <60%: 0, 60-74%: 1, 75-100%: 2 | 0-2 |
-| goalie quality | both starters are elite/confirmed: 1, otherwise: 0 | 0-1 |
-| b2b / fatigue | any team on b2b: +1 (backup goalies, tired legs = fewer goals) | 0-1 |
-| context modifiers | rivalry/motivation/etc: -1, 0, or +1 | -1 to +1 |
+| combined recent 5 u2.5 rate | script | 0-3 |
+| combined 15-game u2.5 rate | script | 0-2 |
+| poisson p(u2.5) | script | 0-2 |
+| b2b / fatigue | script | 0-1 |
+| goalie quality | claude (from step 5) — both starters elite/confirmed: 1, otherwise: 0 | 0-1 |
+| context modifiers | claude — rivalry/motivation/etc: -1, 0, or +1 | -1 to +1 |
 | **total** | | **/10** |
+
+**important**: use the script's sub-scores exactly as output. do not recalculate r5, r15, poisson, or b2b points. only add goalie and context on top.
 
 ### 7. output format
 
@@ -141,9 +112,9 @@ then for each game:
 ### [away] @ [home]
 
 [away] last 15 1p:
-| # | date | opp | h/a | 1p score | total 1p | u2.5 |
-| - | ---- | --- | --- | -------- | -------- | ---- |
-(15 rows, most recent first)
+|  # | date | opp | h/a | score | total | u2.5 |
+| -- | ---- | --- | --- | ----- | ----- | ---- |
+(15 rows, most recent first. right-align the # column — pad single-digit numbers with a leading space so columns stay aligned at row 10+)
 
 recent 5: x/5 (xx%) | last 15: x/15 (xx%)
 on [road/home] last 15: x/y u2.5 (xx%)
@@ -182,9 +153,9 @@ honorable mentions: (6-6.9 confidence)
 avoid: (high-scoring matchups)
 ```
 
-### 9. email report
+### 9. email report (mandatory — every single run)
 
-send a **concise, human-readable** summary to `bk.conazole@icloud.com` via macOS Mail using applescript.
+send a **concise, human-readable** summary to `bk.conazole@icloud.com` via macOS Mail using applescript. this step is NOT optional — it must run every time the analysis runs, whether it's the first run of the day or a re-run.
 
 **important**: the email is NOT the terminal output. it's a clean, scannable version for reading on a phone.
 
