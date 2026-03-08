@@ -133,6 +133,7 @@ write and run a python script that computes all of the following from the data c
 - last 5 games: u2.5 count, u2.5 %, avg 1p goals
 - last 15 games: u2.5 count, u2.5 %, avg 1p goals
 - venue split (h or a matching tonight's role): u2.5 count out of matching games, u2.5 %
+- **1p consistency**: count of games with 3+ total 1p goals out of 15. classify as consistent (0-1), moderate (2-3), or volatile (4+)
 
 **c. head-to-head**
 - if tonight's opponents played each other within the 15-game window, show up to 3 most recent h2h 1p results
@@ -154,10 +155,34 @@ for each game, compute a transparent confidence score:
 | combined recent 5 u2.5 rate | 0-49%: 0, 50-69%: 1, 70-89%: 2, 90-100%: 3 | 0-3 |
 | combined 15-game u2.5 rate | 0-49%: 0, 50-64%: 1, 65-100%: 2 | 0-2 |
 | poisson p(u2.5) | <60%: 0, 60-74%: 1, 75-100%: 2 | 0-2 |
+| 1p consistency | see consistency scoring below | -1 to +1 |
 | goalie matchup | see goalie tier table below | -1 to +2 |
 | b2b / fatigue | any team on b2b: +1 (tired legs = fewer goals) | 0-1 |
 | context modifiers | rivalry/motivation/etc: -1, 0, or +1 | -1 to +1 |
-| **total** | | **/11** |
+| **total** | | **/12** |
+
+**1p consistency scoring:**
+
+this captures whether a team is structurally low-event (like LAK's trap system) or volatile. for each team, count how many of their 15 games had **3 or more total 1p goals**:
+
+| team category | criteria (games with 3+ 1p goals out of 15) |
+| --- | --- |
+| consistent / structured | 0-1 games |
+| moderate | 2-3 games |
+| volatile / high-event | 4+ games |
+
+then combine both teams in the matchup:
+
+| matchup | points |
+| --- | --- |
+| both consistent | +1 |
+| one consistent + one moderate | +0 |
+| both moderate | +0 |
+| one consistent + one volatile | -1 |
+| one moderate + one volatile | -1 |
+| both volatile | -1 |
+
+this rewards games where BOTH teams play a controlled, low-event style. a single volatile team in the matchup drags it to -1 because it only takes one high-event team to blow up the 1p. this is the factor that catches structured teams like LAK even when the raw combined numbers are borderline.
 
 **goalie tier system:**
 
@@ -220,8 +245,8 @@ goalies: [projected starters + confirmation status + tier (elite/average/backup)
 key injuries: [notable absences]
 context: [rivalry, playoff race, coaching, trades, motivation]
 
-confidence: x/11
-  recent 5: +x | last 15: +x | poisson: +x | goalies: +x | b2b: +x | context: +/-x
+confidence: x/12
+  recent 5: +x | last 15: +x | poisson: +x | consistency: +/-x | goalies: +x | b2b: +x | context: +/-x
 ```
 
 ### 8. final recommendation
@@ -233,11 +258,11 @@ output:
 
 | pick | confidence | poisson | key factors |
 | ---- | ---------- | ------- | ----------- |
-| away @ home 1p u2.5 | x/11 | xx% | [top 3 reasons] |
-| away @ home 1p u2.5 | x/11 | xx% | [top 3 reasons] |
+| away @ home 1p u2.5 | x/12 | xx% | [top 3 reasons] |
+| away @ home 1p u2.5 | x/12 | xx% | [top 3 reasons] |
 
-honorable mentions: (7 confidence)
-avoid: (low-confidence matchups)
+honorable mentions: (7/12 confidence)
+avoid: (below 7/12)
 ```
 
 ### 9. email report
@@ -288,12 +313,12 @@ after outputting the final recommendation, save ALL analyzed games to `/Users/ra
 {"date": "yyyy-mm-dd", "game": "away @ home", "pick": "1p u2.5", "confidence": x, "poisson_pct": xx, "base_rate_pct": xx, "combined_recent5_pct": xx, "combined_last15_pct": xx}
 ```
 
-**honorable mentions (confidence 7):**
+**honorable mentions (confidence 7/12):**
 ```json
 {"date": "yyyy-mm-dd", "game": "away @ home", "pick": "1p u2.5", "confidence": x, "poisson_pct": xx, "base_rate_pct": xx, "combined_recent5_pct": xx, "combined_last15_pct": xx, "tier": "honorable_mention"}
 ```
 
-**avoids (confidence < 7):**
+**avoids (confidence < 7/12):**
 ```json
 {"date": "yyyy-mm-dd", "game": "away @ home", "pick": "1p u2.5", "confidence": x, "poisson_pct": xx, "base_rate_pct": xx, "combined_recent5_pct": xx, "combined_last15_pct": xx, "tier": "avoid", "reason": "brief explanation"}
 ```
@@ -302,9 +327,9 @@ use `Edit` to append if the file exists, or `Write` to create it. do not overwri
 
 ## rules
 - all output must be in lowercase. every single word, header, label, sentence — all lowercase. no exceptions.
-- only recommend confidence >= 8/11
+- only recommend confidence >= 8/12
 - max 2 legs for the parlay (top 2 only) — this is the "lock" 2-leg parlay we track season record on
-- always include honorable mentions (7/11) and avoids (<7) so we can track and learn from them over time
+- always include honorable mentions (7/12) and avoids (<7) so we can track and learn from them over time
 - if nothing hits 8, say "no play tonight"
 - tag every pick with supporting factors
 - flag outdoor/stadium series games as abnormal
