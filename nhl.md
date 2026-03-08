@@ -133,17 +133,28 @@ write and run a python script that computes all of the following from the data c
 - last 5 games: u2.5 count, u2.5 %, avg 1p goals
 - last 15 games: u2.5 count, u2.5 %, avg 1p goals
 - venue split (h or a matching tonight's role): u2.5 count out of matching games, u2.5 %
-- **1p consistency**: count of games with 3+ total 1p goals out of 15. classify as consistent (0-1), moderate (2-3), or volatile (4+)
+- avg 1p goals (weighted, offensive): goals-for rate with decay
+- avg 1p goals-against (weighted, defensive): goals-against rate with decay — measures how tight this team's defense is in the 1p
+- **1p system profile**: avg total 1p goals per game + blowup count (3+ 1p goals). classify as structured, moderate, or volatile
 
 **c. head-to-head**
 - if tonight's opponents played each other within the 15-game window, show up to 3 most recent h2h 1p results
 
-**d. poisson model (weighted)**
-- for each team, compute a **weighted 1p goals-for rate** from their 15-game sample:
+**d. poisson model (opponent-adjusted, weighted)**
+- for each team, compute TWO weighted rates from their 15-game sample:
+  - **weighted goals-for rate (offensive)**: how many 1p goals this team scores
+  - **weighted goals-against rate (defensive)**: how many 1p goals this team concedes
   - apply exponential decay weights: most recent game = 1.0, oldest (15th) game = 0.4
   - weight formula: `w = 0.4 + 0.6 * ((15 - i) / 14)` where i=0 is oldest, i=14 is most recent
-  - weighted avg = sum(goals_for * weight) / sum(weights)
-- for each matchup: team a's weighted goals-for rate = lambda_a, team b's weighted goals-for rate = lambda_b
+  - weighted avg = sum(value * weight) / sum(weights)
+
+- **opponent adjustment**: adjust each team's expected scoring based on the opponent's defensive quality:
+  - compute league average 1p goals-against from all games in the dataset
+  - `lambda_a = team_a_wavg_gf * (team_b_wavg_ga / league_avg_ga)`
+  - `lambda_b = team_b_wavg_gf * (team_a_wavg_ga / league_avg_ga)`
+  - this means: if team b allows fewer goals than average (good defense), team a's expected scoring DROPS. if team b's defense is leaky, team a's lambda increases.
+  - show both raw and adjusted lambdas so the adjustment is transparent
+
 - p(total 1p goals <= 2) = sum over all (a,b) where a+b<=2 of: poisson(a, lambda_a) * poisson(b, lambda_b)
 - show: poisson probability, base rate, edge (poisson - base rate)
 
@@ -161,28 +172,36 @@ for each game, compute a transparent confidence score:
 | context modifiers | rivalry/motivation/etc: -1, 0, or +1 | -1 to +1 |
 | **total** | | **/12** |
 
-**1p consistency scoring:**
+**1p system profile:**
 
-this captures whether a team is structurally low-event (like LAK's trap system) or volatile. for each team, count how many of their 15 games had **3 or more total 1p goals**:
+this captures whether a team plays a structurally low-event 1st period by design (coaching system, trap/defensive style) or is a volatile high-event team. this is NOT just about results — it's about identifying teams whose systems produce predictably quiet 1st periods.
 
-| team category | criteria (games with 3+ 1p goals out of 15) |
-| --- | --- |
-| consistent / structured | 0-1 games |
-| moderate | 2-3 games |
-| volatile / high-event | 4+ games |
+for each team, compute TWO metrics from their 15 games:
+1. **avg 1p total goals per game** (total = goals for + goals against in 1p)
+2. **blowup frequency**: count of games with 3+ total 1p goals out of 15
+
+| team classification | criteria | example |
+| --- | --- | --- |
+| **structured** | avg ≤ 1.5 AND blowups ≤ 1 | LAK, NJD — low avg AND almost never blow up. this is a coaching system, not luck. |
+| **moderate** | avg ≤ 2.0 AND blowups ≤ 3 | most teams — some variance but generally controlled |
+| **volatile** | avg > 2.0 OR blowups ≥ 4 | EDM, CBJ — high event level, prone to 1p explosions |
+
+**why both metrics matter**: a team could average 1.4 goals with 0 blowups (genuinely structured) vs a team averaging 1.4 with 3 blowups (they have some 0-goal games pulling the average down, but they're not actually structured). the blowup count catches this.
 
 then combine both teams in the matchup:
 
 | matchup | points |
 | --- | --- |
-| both consistent | +1 |
-| one consistent + one moderate | +0 |
+| both structured | +1 |
+| one structured + one moderate | +0 |
 | both moderate | +0 |
-| one consistent + one volatile | -1 |
+| one structured + one volatile | -1 |
 | one moderate + one volatile | -1 |
 | both volatile | -1 |
 
-this rewards games where BOTH teams play a controlled, low-event style. a single volatile team in the matchup drags it to -1 because it only takes one high-event team to blow up the 1p. this is the factor that catches structured teams like LAK even when the raw combined numbers are borderline.
+a single volatile team in the matchup drags it to -1 because it only takes one high-event team to blow up the 1p.
+
+**display in the analysis**: show each team's classification with their numbers — e.g., "det: structured (avg 1.3, blowups 1/15)" so it's transparent.
 
 **goalie tier system:**
 
@@ -230,7 +249,8 @@ then for each game:
 
 recent 5: x/5 (xx%) | last 15: x/15 (xx%)
 on [road/home] last 15: x/y u2.5 (xx%)
-avg 1p goals (weighted): x.xx
+avg 1p gf (weighted): x.xx | avg 1p ga (weighted): x.xx
+1p system: [structured/moderate/volatile] (avg total: x.x, blowups: x/15)
 
 [home] last 15 1p:
 (same format)
@@ -239,14 +259,15 @@ avg 1p goals (weighted): x.xx
 combined recent 5: x/10 u2.5 (xx%)
 combined last 15: x/30 u2.5 (xx%)
 h2h last 3: [results or "none in window"]
-poisson p(u2.5): xx% | base rate: xx% | edge: +/-xx%
+poisson p(u2.5): xx% (opp-adjusted) | base rate: xx% | edge: +/-xx%
+  λ_away: x.xx (raw x.xx, adjusted for [home] defense) | λ_home: x.xx (raw x.xx, adjusted for [away] defense)
 b2b: [any team on back-to-back, or "none"]
 goalies: [projected starters + confirmation status + tier (elite/average/backup)]
 key injuries: [notable absences]
 context: [rivalry, playoff race, coaching, trades, motivation]
 
 confidence: x/12
-  recent 5: +x | last 15: +x | poisson: +x | consistency: +/-x | goalies: +x | b2b: +x | context: +/-x
+  recent 5: +x | last 15: +x | poisson: +x | system: +/-x | goalies: +x | b2b: +x | context: +/-x
 ```
 
 ### 8. final recommendation
@@ -280,10 +301,10 @@ nhl 1p u2.5 — {month} {day}, {year}
 
 2-leg parlay:
 
-1. {away} @ {home} — 1p u2.5 ({confidence}/10)
+1. {away} @ {home} — 1p u2.5 ({confidence}/12)
    {1-2 sentence reason why this hits}
 
-2. {away} @ {home} — 1p u2.5 ({confidence}/10)
+2. {away} @ {home} — 1p u2.5 ({confidence}/12)
    {1-2 sentence reason why this hits}
 
 season record: {x}-{y} parlays | {x}-{y} individual legs
@@ -308,7 +329,7 @@ rules for the email:
 
 after outputting the final recommendation, save ALL analyzed games to `/Users/raz/claude/nhl/picks_log.jsonl` — picks, honorable mentions, and avoids. append one json line per game:
 
-**picks (confidence >= 7):**
+**picks (confidence >= 8/12):**
 ```json
 {"date": "yyyy-mm-dd", "game": "away @ home", "pick": "1p u2.5", "confidence": x, "poisson_pct": xx, "base_rate_pct": xx, "combined_recent5_pct": xx, "combined_last15_pct": xx}
 ```
@@ -346,6 +367,7 @@ use `Edit` to append if the file exists, or `Write` to create it. do not overwri
 | `https://api-web.nhle.com/v1/schedule/now` | this week's schedule |
 | `https://api-web.nhle.com/v1/standings/now` | current standings |
 | `https://api-web.nhle.com/v1/gamecenter/{gameId}/boxscore` | boxscore with goalie stats (name, TOI) |
+| `https://api-web.nhle.com/v1/gamecenter/{gameId}/play-by-play` | all events including 1p shots (future: event-level analysis) |
 | `https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard?dates={YYYYMMDD}` | games + odds (total line) for a date |
 
 ### key json paths in /v1/score/{date} response:
