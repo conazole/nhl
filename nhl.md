@@ -92,8 +92,16 @@ count period==1 goals per team to get 1p score. only count games where `gameStat
 - if odds are missing for a game, show "—" in the table
 - cache alongside the NHL API data so each date is only fetched once from each source
 
+**starting goalie per game**: for each game involving a target team, fetch the boxscore to determine which goalie started:
+- endpoint: `https://api-web.nhle.com/v1/gamecenter/{gameId}/boxscore`
+- the game ID comes from `games[].id` in the score endpoint
+- json path: `playerByGameStats.awayTeam.goalies[]` and `playerByGameStats.homeTeam.goalies[]`
+- the starting goalie is the one with non-zero `toi` (time on ice). record their last name.
+- to determine starter vs backup: for each team, count which goalie started the most games in the 15-game window. that goalie is "s" (starter). anyone else is "b" (backup).
+- batch the boxscore fetches: collect all game IDs during the date walk, then fetch boxscores for games involving target teams only. cache results.
+
 for each game found, record:
-- date, opponent, home/away, 1p goals for, 1p goals against, total 1p goals, u2.5 (yes/no), game outcome (w/l — did this team win the game? check final score), pre-game total line from ESPN
+- date, opponent, home/away, 1p goals for, 1p goals against, total 1p goals, u2.5 (yes/no), game outcome (w/l — did this team win the game? check final score), pre-game total line from ESPN, starting goalie (s or b)
 
 also track:
 - **h2h games**: if both teams in any of tonight's matchups played each other within the window, flag those games separately
@@ -146,10 +154,36 @@ for each game, compute a transparent confidence score:
 | combined recent 5 u2.5 rate | 0-49%: 0, 50-69%: 1, 70-89%: 2, 90-100%: 3 | 0-3 |
 | combined 15-game u2.5 rate | 0-49%: 0, 50-64%: 1, 65-100%: 2 | 0-2 |
 | poisson p(u2.5) | <60%: 0, 60-74%: 1, 75-100%: 2 | 0-2 |
-| goalie quality | both starters are elite/confirmed: 1, otherwise: 0 | 0-1 |
-| b2b / fatigue | any team on b2b: +1 (backup goalies, tired legs = fewer goals) | 0-1 |
+| goalie matchup | see goalie tier table below | -1 to +2 |
+| b2b / fatigue | any team on b2b: +1 (tired legs = fewer goals) | 0-1 |
 | context modifiers | rivalry/motivation/etc: -1, 0, or +1 | -1 to +1 |
-| **total** | | **/10** |
+| **total** | | **/11** |
+
+**goalie tier system:**
+
+goalies are classified into 3 tiers based on current-season performance and reputation:
+
+| tier | description | goalies (2025-26) |
+| --- | --- | --- |
+| elite | top ~8-10 in the league, proven shot-suppressors | shesterkin, vasilevskiy, hellebuyck, oettinger, demko, sorokin, saros, swayman, bobrovsky, adin hill |
+| average | team's #1 starter but not elite-tier | everyone else who is their team's regular starter (e.g., dostal, gibson, luukkonen, skinner, blackwood, ullmark, etc.) |
+| backup | not the team's #1 — filling in due to b2b, injury, or rotation | any goalie who is not the team's expected starter |
+
+**goalie matchup scoring:**
+
+| matchup | points | rationale |
+| --- | --- | --- |
+| both elite | +2 | two elite goalies = strongest under signal |
+| one elite + one average | +1 | one wall is still good for under |
+| both average starters | +0 | neutral — no edge from goalies |
+| one elite + one backup | +0 | elite helps but backup is a leak |
+| one average + one backup | -1 | backup is a liability, no elite to offset |
+| both backups | -1 | highest goal risk, worst for under |
+| unconfirmed (can't determine) | +0 | default to neutral when uncertain |
+
+**important**: the elite tier list should be reviewed periodically. if a goalie gets injured, traded, or their performance drops significantly, adjust accordingly. when in doubt about a goalie's tier, default to average.
+
+**note on b2b interaction**: the b2b factor (+1) already exists separately. do NOT double-count — if a team is on b2b and running a backup, the b2b factor covers the fatigue angle. the goalie factor covers the quality angle. they stack independently.
 
 ### 7. output format
 
@@ -165,9 +199,9 @@ then for each game:
 ### [away] @ [home]
 
 [away] last 15 1p:
-| # | date | opp | h/a | score | total | u2.5 | w/l | line |
-| - | ---- | --- | --- | ----- | ----- | ---- | --- | ---- |
-(15 rows, most recent first)
+| # | date | opp | h/a | score | total | u2.5 | w/l | line | g |
+| - | ---- | --- | --- | ----- | ----- | ---- | --- | ---- | - |
+(15 rows, most recent first. g = s for starter, b for backup)
 
 recent 5: x/5 (xx%) | last 15: x/15 (xx%)
 on [road/home] last 15: x/y u2.5 (xx%)
@@ -182,11 +216,11 @@ combined last 15: x/30 u2.5 (xx%)
 h2h last 3: [results or "none in window"]
 poisson p(u2.5): xx% | base rate: xx% | edge: +/-xx%
 b2b: [any team on back-to-back, or "none"]
-goalies: [projected starters + confirmation status]
+goalies: [projected starters + confirmation status + tier (elite/average/backup)]
 key injuries: [notable absences]
 context: [rivalry, playoff race, coaching, trades, motivation]
 
-confidence: x/10
+confidence: x/11
   recent 5: +x | last 15: +x | poisson: +x | goalies: +x | b2b: +x | context: +/-x
 ```
 
@@ -199,11 +233,11 @@ output:
 
 | pick | confidence | poisson | key factors |
 | ---- | ---------- | ------- | ----------- |
-| away @ home 1p u2.5 | x/10 | xx% | [top 3 reasons] |
-| away @ home 1p u2.5 | x/10 | xx% | [top 3 reasons] |
+| away @ home 1p u2.5 | x/11 | xx% | [top 3 reasons] |
+| away @ home 1p u2.5 | x/11 | xx% | [top 3 reasons] |
 
-honorable mentions: (6-6.9 confidence)
-avoid: (high-scoring matchups)
+honorable mentions: (7 confidence)
+avoid: (low-confidence matchups)
 ```
 
 ### 9. email report
@@ -254,12 +288,12 @@ after outputting the final recommendation, save ALL analyzed games to `/Users/ra
 {"date": "yyyy-mm-dd", "game": "away @ home", "pick": "1p u2.5", "confidence": x, "poisson_pct": xx, "base_rate_pct": xx, "combined_recent5_pct": xx, "combined_last15_pct": xx}
 ```
 
-**honorable mentions (confidence 6-6.9):**
+**honorable mentions (confidence 7):**
 ```json
 {"date": "yyyy-mm-dd", "game": "away @ home", "pick": "1p u2.5", "confidence": x, "poisson_pct": xx, "base_rate_pct": xx, "combined_recent5_pct": xx, "combined_last15_pct": xx, "tier": "honorable_mention"}
 ```
 
-**avoids (confidence < 6):**
+**avoids (confidence < 7):**
 ```json
 {"date": "yyyy-mm-dd", "game": "away @ home", "pick": "1p u2.5", "confidence": x, "poisson_pct": xx, "base_rate_pct": xx, "combined_recent5_pct": xx, "combined_last15_pct": xx, "tier": "avoid", "reason": "brief explanation"}
 ```
@@ -268,10 +302,10 @@ use `Edit` to append if the file exists, or `Write` to create it. do not overwri
 
 ## rules
 - all output must be in lowercase. every single word, header, label, sentence — all lowercase. no exceptions.
-- only recommend confidence >= 7/10
+- only recommend confidence >= 8/11
 - max 2 legs for the parlay (top 2 only) — this is the "lock" 2-leg parlay we track season record on
-- always include honorable mentions (6-6.9) and avoids (<6) so we can track and learn from them over time
-- if nothing hits 7, say "no play tonight"
+- always include honorable mentions (7/11) and avoids (<7) so we can track and learn from them over time
+- if nothing hits 8, say "no play tonight"
 - tag every pick with supporting factors
 - flag outdoor/stadium series games as abnormal
 - night 1-2 after olympic break or all-star break = expect rust (slow starts)
@@ -286,6 +320,7 @@ use `Edit` to append if the file exists, or `Write` to create it. do not overwri
 | `https://api-web.nhle.com/v1/score/now` | today's scoreboard |
 | `https://api-web.nhle.com/v1/schedule/now` | this week's schedule |
 | `https://api-web.nhle.com/v1/standings/now` | current standings |
+| `https://api-web.nhle.com/v1/gamecenter/{gameId}/boxscore` | boxscore with goalie stats (name, TOI) |
 | `https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard?dates={YYYYMMDD}` | games + odds (total line) for a date |
 
 ### key json paths in /v1/score/{date} response:
