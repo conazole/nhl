@@ -104,21 +104,24 @@ count period==1 goals per team to get 1p score. only count games where `gameStat
 - the game ID comes from `games[].id` in the score endpoint
 - filter `plays[]` where `periodDescriptor.number == 1`
 - count events with `typeDescKey == "shot-on-goal"` or `typeDescKey == "goal"` per team using `details.eventOwnerTeamId`
-- record: 1p shots for, 1p shots against for each team
-- this is the most direct measure of event level — low shots = structured system, high shots = high-event
+- count events with `typeDescKey == "penalty"` per team using `details.committedByPlayerId` → look up team, or use `details.eventOwnerTeamId` (the team that committed the penalty)
+- record per team: 1p shots for, 1p shots against, 1p penalties taken
+- shots measure event level. penalties measure discipline / PP exposure.
 
 **batch all per-game fetches**: collect all game IDs during the date walk, then fetch boxscores AND play-by-plays for games involving target teams only. use parallel fetching or sequential with caching to minimize total time. each game needs both endpoints (boxscore for goalie, play-by-play for shots).
 
 for each game found, record:
-- date, opponent, home/away, 1p goals for, 1p goals against, total 1p goals, u2.5 (yes/no), game outcome (w/l — did this team win the game? check final score), pre-game total line from ESPN, starting goalie (s or b), 1p shots for, 1p shots against
+- date, opponent, home/away, 1p goals for, 1p goals against, total 1p goals, u2.5 (yes/no), game outcome (w/l — did this team win the game? check final score), pre-game total line from ESPN, starting goalie (s or b), 1p shots for, 1p shots against, 1p penalties taken
 
 also track:
 - **h2h games**: if both teams in any of tonight's matchups played each other within the window, flag those games separately
 - **league-wide totals**: count total games fetched and total u2.5 outcomes across all games (not just teams playing tonight — every completed game you encounter while walking dates)
 
-### 4. back-to-back detection
+### 4. schedule factors (b2b + rest days)
 
-check if any team playing tonight also played yesterday using yesterday's score data (already fetched in step 3).
+for each team playing tonight, determine:
+- **back-to-back**: did this team play yesterday? (use yesterday's score data from step 3). b2b is noted for context and goalie implications, but is NOT a standalone confidence factor — research shows fatigue primarily affects later periods, not 1p. the backup goalie deployment is the real 1p-relevant effect, and that's captured by the goalie tier system.
+- **days since last game**: compute `TARGET_DATE - date_of_most_recent_game` from the 15-game data. flag any team with 3+ days rest as a rust risk. extended rest (4+ days) correlates with lower goalie save% (.892 vs .908 at 1-2 days rest) and rustier play — this increases 1p scoring risk, which is BAD for unders.
 
 ### 5. goalie & injury check
 
@@ -145,6 +148,7 @@ write and run a python script that computes all of the following from the data c
 - avg 1p goals (weighted, offensive): goals-for rate with decay
 - avg 1p goals-against (weighted, defensive): goals-against rate with decay — measures how tight this team's defense is in the 1p
 - avg 1p shots for, shots against, total shots (from play-by-play data)
+- avg 1p penalties taken per game (from play-by-play data) — measures discipline / PP exposure
 - **1p system profile**: uses goals AND shots to classify. see system profile section below.
 
 **c. head-to-head**
@@ -176,11 +180,26 @@ for each game, compute a transparent confidence score:
 | combined recent 5 u2.5 rate | 0-49%: 0, 50-69%: 1, 70-89%: 2, 90-100%: 3 | 0-3 |
 | combined 15-game u2.5 rate | 0-49%: 0, 50-64%: 1, 65-100%: 2 | 0-2 |
 | poisson p(u2.5) | <60%: 0, 60-74%: 1, 75-100%: 2 | 0-2 |
-| 1p consistency | see consistency scoring below | -1 to +1 |
+| 1p system profile | see system profile section below | -1 to +1 |
 | goalie matchup | see goalie tier table below | -1 to +2 |
-| b2b / fatigue | any team on b2b: +1 (tired legs = fewer goals) | 0-1 |
+| rest days | both teams 1-2 days rest: 0. any team 3+ days rest: -1 (rust) | -1 to 0 |
+| discipline | see discipline scoring below | -1 to +1 |
 | context modifiers | rivalry/motivation/etc: -1, 0, or +1 | -1 to +1 |
 | **total** | | **/12** |
+
+**discipline (penalty rate):**
+
+power plays create high-danger scoring chances. two disciplined teams = fewer PP opportunities = fewer 1p goals. this is measured directly from the play-by-play data we already collect.
+
+for each team, compute avg 1p penalties taken per game from their 15-game sample. then combine both teams' rates for the matchup total:
+
+| combined avg 1p penalties per game | points | rationale |
+| --- | --- | --- |
+| ≤ 1.5 | +1 | disciplined matchup — few PP chances, scoring stays at even strength |
+| 1.5 - 2.5 | 0 | normal penalty exposure |
+| > 2.5 | -1 | penalty-heavy matchup — lots of PP time creates more goals |
+
+**display in analysis**: show each team's avg 1p penalties per game and the combined total — e.g., "discipline: det 0.6/gm + njd 0.8/gm = 1.4 combined → +1 (disciplined matchup)"
 
 **1p system profile (goals + shots):**
 
@@ -250,7 +269,7 @@ goalies are classified into 3 tiers based on current-season performance and repu
 
 **important**: the elite tier list should be reviewed periodically. if a goalie gets injured, traded, or their performance drops significantly, adjust accordingly. when in doubt about a goalie's tier, default to average.
 
-**note on b2b interaction**: the b2b factor (+1) already exists separately. do NOT double-count — if a team is on b2b and running a backup, the b2b factor covers the fatigue angle. the goalie factor covers the quality angle. they stack independently.
+**note on b2b**: b2b is no longer a standalone confidence factor (research shows fatigue primarily affects later periods, not 1p). the goalie tier system captures the real 1p impact — backup deployment. b2b status is still noted in the analysis for context but does not add/subtract confidence points.
 
 ### 7. output format
 
@@ -274,6 +293,7 @@ recent 5: x/5 (xx%) | last 15: x/15 (xx%)
 on [road/home] last 15: x/y u2.5 (xx%)
 avg 1p gf (weighted): x.xx | avg 1p ga (weighted): x.xx
 avg 1p shots: x.x for, x.x against, x.x total
+avg 1p penalties: x.x/gm
 1p system: [structured/moderate/volatile] (avg goals x.x, blowups x/15, avg shots x.x) [+ adjustment note if applicable]
 
 [home] last 15 1p:
@@ -285,13 +305,15 @@ combined last 15: x/30 u2.5 (xx%)
 h2h last 3: [results or "none in window"]
 poisson p(u2.5): xx% (opp-adjusted) | base rate: xx% | edge: +/-xx%
   λ_away: x.xx (raw x.xx, adjusted for [home] defense) | λ_home: x.xx (raw x.xx, adjusted for [away] defense)
-b2b: [any team on back-to-back, or "none"]
+b2b: [any team on back-to-back, or "none" — informational only, not a confidence factor]
+rest: [days since last game per team — flag 3+ days as rust risk]
 goalies: [projected starters + confirmation status + tier (elite/average/backup)]
+discipline: [team a x.x pen/gm + team b x.x pen/gm = x.x combined → score]
 key injuries: [notable absences]
 context: [rivalry, playoff race, coaching, trades, motivation]
 
 confidence: x/12
-  recent 5: +x | last 15: +x | poisson: +x | system: +/-x | goalies: +x | b2b: +x | context: +/-x
+  recent 5: +x | last 15: +x | poisson: +x | system: +/-x | goalies: +x | rest: +/-x | discipline: +/-x | context: +/-x
 ```
 
 ### 8. final recommendation
