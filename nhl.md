@@ -98,10 +98,19 @@ count period==1 goals per team to get 1p score. only count games where `gameStat
 - json path: `playerByGameStats.awayTeam.goalies[]` and `playerByGameStats.homeTeam.goalies[]`
 - the starting goalie is the one with non-zero `toi` (time on ice). record their last name.
 - to determine starter vs backup: for each team, count which goalie started the most games in the 15-game window. that goalie is "s" (starter). anyone else is "b" (backup).
-- batch the boxscore fetches: collect all game IDs during the date walk, then fetch boxscores for games involving target teams only. cache results.
+
+**1p shot data per game**: for each game involving a target team, fetch the play-by-play to get 1st period shots:
+- endpoint: `https://api-web.nhle.com/v1/gamecenter/{gameId}/play-by-play`
+- the game ID comes from `games[].id` in the score endpoint
+- filter `plays[]` where `periodDescriptor.number == 1`
+- count events with `typeDescKey == "shot-on-goal"` or `typeDescKey == "goal"` per team using `details.eventOwnerTeamId`
+- record: 1p shots for, 1p shots against for each team
+- this is the most direct measure of event level — low shots = structured system, high shots = high-event
+
+**batch all per-game fetches**: collect all game IDs during the date walk, then fetch boxscores AND play-by-plays for games involving target teams only. use parallel fetching or sequential with caching to minimize total time. each game needs both endpoints (boxscore for goalie, play-by-play for shots).
 
 for each game found, record:
-- date, opponent, home/away, 1p goals for, 1p goals against, total 1p goals, u2.5 (yes/no), game outcome (w/l — did this team win the game? check final score), pre-game total line from ESPN, starting goalie (s or b)
+- date, opponent, home/away, 1p goals for, 1p goals against, total 1p goals, u2.5 (yes/no), game outcome (w/l — did this team win the game? check final score), pre-game total line from ESPN, starting goalie (s or b), 1p shots for, 1p shots against
 
 also track:
 - **h2h games**: if both teams in any of tonight's matchups played each other within the window, flag those games separately
@@ -135,7 +144,8 @@ write and run a python script that computes all of the following from the data c
 - venue split (h or a matching tonight's role): u2.5 count out of matching games, u2.5 %
 - avg 1p goals (weighted, offensive): goals-for rate with decay
 - avg 1p goals-against (weighted, defensive): goals-against rate with decay — measures how tight this team's defense is in the 1p
-- **1p system profile**: avg total 1p goals per game + blowup count (3+ 1p goals). classify as structured, moderate, or volatile
+- avg 1p shots for, shots against, total shots (from play-by-play data)
+- **1p system profile**: uses goals AND shots to classify. see system profile section below.
 
 **c. head-to-head**
 - if tonight's opponents played each other within the 15-game window, show up to 3 most recent h2h 1p results
@@ -172,21 +182,34 @@ for each game, compute a transparent confidence score:
 | context modifiers | rivalry/motivation/etc: -1, 0, or +1 | -1 to +1 |
 | **total** | | **/12** |
 
-**1p system profile:**
+**1p system profile (goals + shots):**
 
-this captures whether a team plays a structurally low-event 1st period by design (coaching system, trap/defensive style) or is a volatile high-event team. this is NOT just about results — it's about identifying teams whose systems produce predictably quiet 1st periods.
+this captures whether a team plays a structurally low-event 1st period by design (coaching system, trap/defensive style) or is a volatile high-event team. this goes beyond results — shot data reveals the true event level even when goals are low by luck.
 
-for each team, compute TWO metrics from their 15 games:
+for each team, compute THREE metrics from their 15 games:
 1. **avg 1p total goals per game** (total = goals for + goals against in 1p)
 2. **blowup frequency**: count of games with 3+ total 1p goals out of 15
+3. **avg 1p total shots per game** (total = shots for + shots against in 1p, from play-by-play data)
+
+**step 1: initial classification from goals**
 
 | team classification | criteria | example |
 | --- | --- | --- |
-| **structured** | avg ≤ 1.5 AND blowups ≤ 1 | LAK, NJD — low avg AND almost never blow up. this is a coaching system, not luck. |
-| **moderate** | avg ≤ 2.0 AND blowups ≤ 3 | most teams — some variance but generally controlled |
-| **volatile** | avg > 2.0 OR blowups ≥ 4 | EDM, CBJ — high event level, prone to 1p explosions |
+| **structured** | avg goals ≤ 1.5 AND blowups ≤ 1 | LAK, NJD — low avg AND almost never blow up |
+| **moderate** | avg goals ≤ 2.0 AND blowups ≤ 3 | most teams — some variance but generally controlled |
+| **volatile** | avg goals > 2.0 OR blowups ≥ 4 | EDM, CBJ — high event level, prone to 1p explosions |
 
-**why both metrics matter**: a team could average 1.4 goals with 0 blowups (genuinely structured) vs a team averaging 1.4 with 3 blowups (they have some 0-goal games pulling the average down, but they're not actually structured). the blowup count catches this.
+**step 2: shot-based validation/adjustment**
+
+shots are the leading indicator — goals are the lagging one. a team with low goals but high shots is getting lucky, not playing a low-event system. shots validate whether the goals-based classification is real.
+
+| shot adjustment | criteria | effect |
+| --- | --- | --- |
+| upgrade to structured | classified as moderate by goals BUT avg total shots ≤ 18 | genuinely low-event — few shots means the system suppresses chances, not just goals |
+| downgrade from structured | classified as structured by goals BUT avg total shots > 22 | high shot volume = lucky, not structured. lots of chances will eventually produce goals |
+| downgrade to volatile | classified as moderate by goals BUT avg total shots > 28 | extreme shot volume = high-event system regardless of current goal output |
+
+**why shots matter**: a team could average 1.3 goals per 1p (looks structured) but average 26 total shots per 1p (high-event — just getting lucky with save percentage). that team WILL regress. conversely, a team averaging 1.8 goals but only 16 total shots is genuinely low-event — the goals they do allow tend to be high-danger.
 
 then combine both teams in the matchup:
 
@@ -201,7 +224,7 @@ then combine both teams in the matchup:
 
 a single volatile team in the matchup drags it to -1 because it only takes one high-event team to blow up the 1p.
 
-**display in the analysis**: show each team's classification with their numbers — e.g., "det: structured (avg 1.3, blowups 1/15)" so it's transparent.
+**display in the analysis**: show each team's classification with ALL numbers — e.g., "det: structured (avg goals 1.3, blowups 1/15, avg shots 17.2)" so the shot validation is transparent. if a team was adjusted by shots, note it — e.g., "det: moderate (avg goals 1.4, blowups 1/15 → would be structured, but avg shots 24.1 = high shot volume, downgraded)".
 
 **goalie tier system:**
 
@@ -250,7 +273,8 @@ then for each game:
 recent 5: x/5 (xx%) | last 15: x/15 (xx%)
 on [road/home] last 15: x/y u2.5 (xx%)
 avg 1p gf (weighted): x.xx | avg 1p ga (weighted): x.xx
-1p system: [structured/moderate/volatile] (avg total: x.x, blowups: x/15)
+avg 1p shots: x.x for, x.x against, x.x total
+1p system: [structured/moderate/volatile] (avg goals x.x, blowups x/15, avg shots x.x) [+ adjustment note if applicable]
 
 [home] last 15 1p:
 (same format)
@@ -367,7 +391,7 @@ use `Edit` to append if the file exists, or `Write` to create it. do not overwri
 | `https://api-web.nhle.com/v1/schedule/now` | this week's schedule |
 | `https://api-web.nhle.com/v1/standings/now` | current standings |
 | `https://api-web.nhle.com/v1/gamecenter/{gameId}/boxscore` | boxscore with goalie stats (name, TOI) |
-| `https://api-web.nhle.com/v1/gamecenter/{gameId}/play-by-play` | all events including 1p shots (future: event-level analysis) |
+| `https://api-web.nhle.com/v1/gamecenter/{gameId}/play-by-play` | all events including 1p shots for system profile validation |
 | `https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard?dates={YYYYMMDD}` | games + odds (total line) for a date |
 
 ### key json paths in /v1/score/{date} response:
