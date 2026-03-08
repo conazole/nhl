@@ -85,8 +85,15 @@ count period==1 goals per team to get 1p score. only count games where `gameStat
 
 **optimize**: write a single python script that walks backward one date at a time starting from yesterday. fetch each date once and scan for all teams needing games. stop when every team has **15 games**. set max lookback to **60 days**. cache date results so you don't re-fetch. note: olympic break was feb 7-22, 2026 — no nhl games during that window, so you may jump across it depending on the date.
 
+**total line (odds) per game**: for each date fetched, also fetch the ESPN scoreboard API to get the pre-game total (o/u) line:
+- endpoint: `https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard?dates={YYYYMMDD}`
+- json path: `events[].competitions[].odds[0].overUnder` — this is the total line (e.g. 5.5, 6.0, 6.5)
+- match ESPN games to NHL API games by team abbreviations (ESPN uses same 3-letter codes, case-insensitive)
+- if odds are missing for a game, show "—" in the table
+- cache alongside the NHL API data so each date is only fetched once from each source
+
 for each game found, record:
-- date, opponent, home/away, 1p goals for, 1p goals against, total 1p goals, u2.5 (yes/no)
+- date, opponent, home/away, 1p goals for, 1p goals against, total 1p goals, u2.5 (yes/no), game outcome (w/l — did this team win the game? check final score), pre-game total line from ESPN
 
 also track:
 - **h2h games**: if both teams in any of tonight's matchups played each other within the window, flag those games separately
@@ -158,8 +165,8 @@ then for each game:
 ### [away] @ [home]
 
 [away] last 15 1p:
-| # | date | opp | h/a | 1p score | total 1p | u2.5 |
-| - | ---- | --- | --- | -------- | -------- | ---- |
+| # | date | opp | h/a | score | total | u2.5 | w/l | line |
+| - | ---- | --- | --- | ----- | ----- | ---- | --- | ---- |
 (15 rows, most recent first)
 
 recent 5: x/5 (xx%) | last 15: x/15 (xx%)
@@ -279,6 +286,7 @@ use `Edit` to append if the file exists, or `Write` to create it. do not overwri
 | `https://api-web.nhle.com/v1/score/now` | today's scoreboard |
 | `https://api-web.nhle.com/v1/schedule/now` | this week's schedule |
 | `https://api-web.nhle.com/v1/standings/now` | current standings |
+| `https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard?dates={YYYYMMDD}` | games + odds (total line) for a date |
 
 ### key json paths in /v1/score/{date} response:
 - `games[].awayTeam.abbrev` — team abbreviation (e.g., "car")
