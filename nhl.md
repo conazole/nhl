@@ -99,29 +99,46 @@ count period==1 goals per team to get 1p score. only count games where `gameStat
 - the starting goalie is the one with non-zero `toi` (time on ice). record their last name.
 - to determine starter vs backup: for each team, count which goalie started the most games in the 15-game window. that goalie is "s" (starter). anyone else is "b" (backup).
 
-**1p shot data per game**: for each game involving a target team, fetch the play-by-play to get 1st period shots:
+**1p penalty data per game**: for each game involving a target team, fetch the play-by-play to get 1st period penalties:
 - endpoint: `https://api-web.nhle.com/v1/gamecenter/{gameId}/play-by-play`
 - the game ID comes from `games[].id` in the score endpoint
 - filter `plays[]` where `periodDescriptor.number == 1`
-- count events with `typeDescKey == "shot-on-goal"` or `typeDescKey == "goal"` per team using `details.eventOwnerTeamId`
-- count events with `typeDescKey == "penalty"` per team using `details.committedByPlayerId` → look up team, or use `details.eventOwnerTeamId` (the team that committed the penalty)
-- record per team: 1p shots for, 1p shots against, 1p penalties taken
-- shots measure event level. penalties measure discipline / PP exposure.
+- count events with `typeDescKey == "penalty"` per team using `details.eventOwnerTeamId` (the team that committed the penalty)
+- record per team: 1p penalties taken
+- note: shot/xG/HDC data now comes from moneypuck (see below). play-by-play is only needed for penalties.
 
-**batch all per-game fetches**: collect all game IDs during the date walk, then fetch boxscores AND play-by-plays for games involving target teams only. use parallel fetching or sequential with caching to minimize total time. each game needs both endpoints (boxscore for goalie, play-by-play for shots).
+**moneypuck xG + high-danger chances**: download the season shot-level CSV for expected goals and shot quality data:
+- download: `https://peter-tanner.com/moneypuck/downloads/shots_2025.zip` (~14MB, updated nightly)
+- unzip and load the CSV into memory (46MB, ~86k rows)
+- filter to `period == 1` for 1st period shots only
+- for each team playing tonight, find their games using `homeTeamCode`/`awayTeamCode`
+- sort by `game_id` (chronological), take the last 15 games per team
+- per game, compute:
+  - **1p xGF**: sum of `xGoal` column for rows where `teamCode` matches the team
+  - **1p xGA**: sum of `xGoal` column for rows where `teamCode` matches the opponent
+  - **1p SOG for**: count of rows where `event in ('SHOT', 'GOAL')` and `teamCode` matches (shots on goal)
+  - **1p SOG against**: same for opponent
+  - **1p HDCF**: count of rows with `xGoal >= 0.20` where `teamCode` matches (high-danger chances for)
+  - **1p HDCA**: count of rows with `xGoal >= 0.20` where `teamCode` matches opponent (high-danger chances against)
+- **fallback**: if moneypuck download fails, fall back to play-by-play shot counting (typeDescKey "shot-on-goal" + "goal") as before. note this in the output.
+- xG is ~2x more predictive than raw shot volume. this is the single biggest accuracy upgrade to the model.
+
+**batch all per-game fetches**: collect all game IDs during the date walk, then fetch boxscores AND play-by-plays for games involving target teams only. use parallel fetching or sequential with caching to minimize total time. each game needs: boxscore (goalie), play-by-play (penalties). shot/xG/HDC data comes separately from the moneypuck CSV download.
 
 for each game found, record:
-- date, opponent, home/away, 1p goals for, 1p goals against, total 1p goals, u2.5 (yes/no), game outcome (w/l — did this team win the game? check final score), pre-game total line from ESPN, starting goalie (s or b), 1p shots for, 1p shots against, 1p penalties taken
+- date, opponent, home/away, 1p goals for, 1p goals against, total 1p goals, u2.5 (yes/no), game outcome (w/l — did this team win the game? check final score), pre-game total line from ESPN, starting goalie (s or b), 1p penalties taken, 1p xGF, 1p xGA, 1p SOG for, 1p SOG against, 1p HDCF, 1p HDCA
 
 also track:
 - **h2h games**: if both teams in any of tonight's matchups played each other within the window, flag those games separately
 - **league-wide totals**: count total games fetched and total u2.5 outcomes across all games (not just teams playing tonight — every completed game you encounter while walking dates)
 
-### 4. schedule factors (b2b + rest days)
+### 4. schedule factors (b2b, rest, travel, day-of-week)
 
 for each team playing tonight, determine:
 - **back-to-back**: did this team play yesterday? (use yesterday's score data from step 3). b2b is noted for context and goalie implications, but is NOT a standalone confidence factor — research shows fatigue primarily affects later periods, not 1p. the backup goalie deployment is the real 1p-relevant effect, and that's captured by the goalie tier system.
 - **days since last game**: compute `TARGET_DATE - date_of_most_recent_game` from the 15-game data. flag any team with 3+ days rest as a rust risk. extended rest (4+ days) correlates with lower goalie save% (.892 vs .908 at 1-2 days rest) and rustier play — this increases 1p scoring risk, which is BAD for unders.
+- **timezone change (informational)**: for away teams, compute the timezone difference between the away team's home city and the game location (home team's city). use this map (offset from ET): eastern (NYR, NYI, NJD, PHI, PIT, WSH, CAR, FLA, TBL, BOS, BUF, OTT, MTL, TOR, CBJ, DET) = 0, central (CHI, MIN, STL, NSH, DAL, WPG) = -1, mountain (COL, CGY, EDM, UTA) = -2, pacific (VAN, SEA, SJS, LAK, ANA, VGK) = -3. flag 3+ timezone changes as significant — peer-reviewed research (17,088 games) shows negative impact on performance. however, the effect primarily hits later periods and penalties, not 1p specifically. **informational only — does not add/subtract confidence points.** noted in analysis for context.
+- **day of week (informational)**: note the day of the week for TARGET_DATE. research shows tuesday games (after monday off) trend higher-scoring (62% over), while monday/wednesday games trend lower-scoring (62% under). this is full-game data, not 1p-specific. **informational only — can inform the context modifier but is not a standalone factor.**
 
 ### 5. goalie & injury check
 
@@ -147,30 +164,37 @@ write and run a python script that computes all of the following from the data c
 - venue split (h or a matching tonight's role): u2.5 count out of matching games, u2.5 %
 - avg 1p goals (weighted, offensive): goals-for rate with decay
 - avg 1p goals-against (weighted, defensive): goals-against rate with decay — measures how tight this team's defense is in the 1p
-- avg 1p shots for, shots against, total shots (from play-by-play data)
+- avg 1p xGF (weighted): expected goals for — what this team SHOULD be scoring based on shot quality. more predictive than raw goals.
+- avg 1p xGA (weighted): expected goals against — what this team SHOULD be conceding. captures defensive shot suppression.
+- avg 1p SOG for, SOG against, total SOG (from moneypuck)
+- avg 1p HDCF, HDCA (high-danger chances: shots with xGoal >= 0.20) — the ~5% of shots that produce ~33% of goals
 - avg 1p penalties taken per game (from play-by-play data) — measures discipline / PP exposure
-- **1p system profile**: uses goals AND shots to classify. see system profile section below.
+- **1p system profile**: uses goals, shots, AND xG to classify. see system profile section below.
 
 **c. head-to-head**
 - if tonight's opponents played each other within the 15-game window, show up to 3 most recent h2h 1p results
 
-**d. poisson model (opponent-adjusted, weighted)**
+**d. poisson model (xG-based, opponent-adjusted, weighted)**
+- the poisson model now uses **expected goals (xG)** instead of raw goals for lambda computation. xG captures shot quality and is ~2x more predictive than shot volume for goal-scoring rates. raw goals include luck (a garbage-angle shot that went in, a wide-open net that was missed) — xG strips that out.
+
 - for each team, compute TWO weighted rates from their 15-game sample:
-  - **weighted goals-for rate (offensive)**: how many 1p goals this team scores
-  - **weighted goals-against rate (defensive)**: how many 1p goals this team concedes
+  - **weighted xGF rate (offensive)**: how many expected goals this team generates per 1p based on shot quality
+  - **weighted xGA rate (defensive)**: how many expected goals this team concedes per 1p based on opponent shot quality
   - apply exponential decay weights: most recent game = 1.0, oldest (15th) game = 0.4
   - weight formula: `w = 0.4 + 0.6 * ((15 - i) / 14)` where i=0 is oldest, i=14 is most recent
   - weighted avg = sum(value * weight) / sum(weights)
 
 - **opponent adjustment**: adjust each team's expected scoring based on the opponent's defensive quality:
-  - compute league average 1p goals-against from all games in the dataset
-  - `lambda_a = team_a_wavg_gf * (team_b_wavg_ga / league_avg_ga)`
-  - `lambda_b = team_b_wavg_gf * (team_a_wavg_ga / league_avg_ga)`
-  - this means: if team b allows fewer goals than average (good defense), team a's expected scoring DROPS. if team b's defense is leaky, team a's lambda increases.
-  - show both raw and adjusted lambdas so the adjustment is transparent
+  - compute league average 1p xGA from all period-1 data in the moneypuck dataset
+  - `lambda_a = team_a_wavg_xgf * (team_b_wavg_xga / league_avg_xga)`
+  - `lambda_b = team_b_wavg_xgf * (team_a_wavg_xga / league_avg_xga)`
+  - this means: if team b suppresses shot quality (low xGA), team a's expected scoring DROPS. if team b allows lots of high-danger chances (high xGA), team a's lambda increases.
+  - show: raw xG lambdas, adjusted xG lambdas, AND raw goals lambdas for comparison
 
 - p(total 1p goals <= 2) = sum over all (a,b) where a+b<=2 of: poisson(a, lambda_a) * poisson(b, lambda_b)
 - show: poisson probability, base rate, edge (poisson - base rate)
+
+- **fallback**: if moneypuck data is unavailable, use raw goals for lambda computation (as before) and note the fallback in the output.
 
 **e. systematic confidence score**
 for each game, compute a transparent confidence score:
@@ -229,6 +253,8 @@ shots are the leading indicator — goals are the lagging one. a team with low g
 | downgrade to volatile | classified as moderate by goals BUT avg total shots > 28 | extreme shot volume = high-event system regardless of current goal output |
 
 **why shots matter**: a team could average 1.3 goals per 1p (looks structured) but average 26 total shots per 1p (high-event — just getting lucky with save percentage). that team WILL regress. conversely, a team averaging 1.8 goals but only 16 total shots is genuinely low-event — the goals they do allow tend to be high-danger.
+
+**xG + HDC as additional context**: display each team's avg 1p xGF, xGA, and HDCF/HDCA alongside the system profile. these don't change the structured/moderate/volatile classification directly but provide transparency. a "structured" team with high xGA is living dangerously. a "volatile" team with low xGA may be unlucky and due to regress down. the poisson model captures this through xG-based lambdas.
 
 then combine both teams in the matchup:
 
@@ -292,7 +318,9 @@ then for each game:
 recent 5: x/5 (xx%) | last 15: x/15 (xx%)
 on [road/home] last 15: x/y u2.5 (xx%)
 avg 1p gf (weighted): x.xx | avg 1p ga (weighted): x.xx
-avg 1p shots: x.x for, x.x against, x.x total
+avg 1p xgf (weighted): x.xx | avg 1p xga (weighted): x.xx
+avg 1p sog: x.x for, x.x against, x.x total
+avg 1p hdc: x.x for, x.x against
 avg 1p penalties: x.x/gm
 1p system: [structured/moderate/volatile] (avg goals x.x, blowups x/15, avg shots x.x) [+ adjustment note if applicable]
 
@@ -303,14 +331,16 @@ avg 1p penalties: x.x/gm
 combined recent 5: x/10 u2.5 (xx%)
 combined last 15: x/30 u2.5 (xx%)
 h2h last 3: [results or "none in window"]
-poisson p(u2.5): xx% (opp-adjusted) | base rate: xx% | edge: +/-xx%
-  λ_away: x.xx (raw x.xx, adjusted for [home] defense) | λ_home: x.xx (raw x.xx, adjusted for [away] defense)
+poisson p(u2.5): xx% (xG-based, opp-adjusted) | base rate: xx% | edge: +/-xx%
+  λ_away: x.xx xG (raw goals x.xx, adjusted for [home] defense) | λ_home: x.xx xG (raw goals x.xx, adjusted for [away] defense)
 b2b: [any team on back-to-back, or "none" — informational only, not a confidence factor]
 rest: [days since last game per team — flag 3+ days as rust risk]
+travel: [timezone change for away team — e.g., "SEA → NYR: 3 TZ change" or "same timezone" — informational]
+day: [day of week — note if tuesday (trend: higher scoring) or monday/wednesday (trend: lower scoring) — informational]
 goalies: [projected starters + confirmation status + tier (elite/average/backup)]
 discipline: [team a x.x pen/gm + team b x.x pen/gm = x.x combined → score]
 key injuries: [notable absences]
-context: [rivalry, playoff race, coaching, trades, motivation]
+context: [rivalry, playoff race, coaching, trades, motivation — may incorporate travel/day-of-week signals]
 
 confidence: x/12
   recent 5: +x | last 15: +x | poisson: +x | system: +/-x | goalies: +x | rest: +/-x | discipline: +/-x | context: +/-x
@@ -413,8 +443,9 @@ use `Edit` to append if the file exists, or `Write` to create it. do not overwri
 | `https://api-web.nhle.com/v1/schedule/now` | this week's schedule |
 | `https://api-web.nhle.com/v1/standings/now` | current standings |
 | `https://api-web.nhle.com/v1/gamecenter/{gameId}/boxscore` | boxscore with goalie stats (name, TOI) |
-| `https://api-web.nhle.com/v1/gamecenter/{gameId}/play-by-play` | all events including 1p shots for system profile validation |
+| `https://api-web.nhle.com/v1/gamecenter/{gameId}/play-by-play` | 1p penalty events for discipline factor |
 | `https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard?dates={YYYYMMDD}` | games + odds (total line) for a date |
+| `https://peter-tanner.com/moneypuck/downloads/shots_2025.zip` | season shot-level CSV with xGoal, shot coords, event type (updated nightly, ~14MB) |
 
 ### key json paths in /v1/score/{date} response:
 - `games[].awayTeam.abbrev` — team abbreviation (e.g., "car")
