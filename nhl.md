@@ -24,6 +24,8 @@ if the target date is in the future (beyond today), note that goalie confirmatio
 
 ## workflow
 
+**CRITICAL: use `run_analysis.py` in the repo for ALL data collection and analysis. NEVER write python scripts from scratch.** the script handles: score walking, boxscores, play-by-play, moneypuck xG, ESPN odds, per-team metrics, matchup analysis, confidence scoring (/12 scale). run it as: `python3 run_analysis.py {YYYY-MM-DD} --goalies '{json}'` — outputs full JSON to stdout, progress to stderr (~32 seconds). claude handles: yesterday's results/post-mortem, goalie/injury web fetches, context modifiers, output formatting, email, picks log updates.
+
 ### 1. check yesterday's results (result tracking)
 
 "yesterday" here means the day before `TARGET_DATE`. before doing anything else, check if `/Users/raz/claude/nhl/picks_log.jsonl` exists. if it does:
@@ -68,22 +70,26 @@ honorable mentions: x-y would-have-won (zz%) — if consistently high, consider 
 
 if the log doesn't exist or there are no unresolved entries, skip this step silently.
 
-### 2. get the target date's games
+### 2. fetch goalies, injuries, and odds (parallel web fetches)
 
-write and run a python script. fetch `https://api-web.nhle.com/v1/score/{TARGET_DATE}` to see the slate. if games haven't posted yet (future date), use `https://api-web.nhle.com/v1/schedule/now` for the week's schedule. map every game: away @ home, noting which team is home and which is away.
+these are the inputs claude gathers BEFORE running the analysis script:
+- **goalies**: fetch from dailyfaceoff (see step 5 below)
+- **injuries**: web search (see step 5 below)
+- **odds**: fetched by run_analysis.py from ESPN scoreboard API automatically
 
-### 3. get last 15 1p scores for every team playing tonight
+### 3. run run_analysis.py
 
-this is the foundation — the most critical step. use endpoint: `https://api-web.nhle.com/v1/score/{YYYY-MM-DD}`
+run: `python3 run_analysis.py {TARGET_DATE} --goalies '{json}'`
 
-this returns all games for that date with a `goals[]` array. each goal has:
-- `period` (integer: 1, 2, 3, 4=ot, 5=so)
-- `teamAbbrev` (e.g. "car")
-- `timeInPeriod` ("mm:ss")
+the `--goalies` arg is a JSON dict of confirmed starters: `{"BOS":"swayman","NYR":"shesterkin",...}` (last names, lowercase). omit teams with unconfirmed goalies.
 
-count period==1 goals per team to get 1p score. only count games where `gameState` is "OFF" or "FINAL".
+the script outputs full JSON to stdout (game scores, team stats, confidence breakdowns, poisson, system profiles, etc.) and progress to stderr. parse the JSON output for all downstream formatting.
 
-**optimize**: write a single python script that walks backward one date at a time starting from yesterday. fetch each date once and scan for all teams needing games. stop when every team has **15 games**. set max lookback to **60 days**. cache date results so you don't re-fetch. note: olympic break was feb 7-22, 2026 — no nhl games during that window, so you may jump across it depending on the date.
+**what the script handles**: date walking (15 games per team, 60-day lookback), boxscores (goalie TOI), play-by-play (penalties, shots), moneypuck xG download + parsing, ESPN odds, league base rate, per-team metrics, head-to-head, poisson (xG-based, opponent-adjusted), system profiles, confidence scoring (/12 scale).
+
+**what claude still handles**: yesterday's post-mortem, context modifiers (rivalry, motivation, playoff race), output formatting (tables, markdown), email, picks log updates, goalie/injury web fetches.
+
+the following sections (3a-3f) document what the script computes — they're reference for understanding the JSON output, NOT instructions to write new code.
 
 **total line (odds) per game**: for each date fetched, also fetch the ESPN scoreboard API to get the pre-game total (o/u) line:
 - endpoint: `https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard?dates={YYYYMMDD}`
@@ -152,7 +158,7 @@ for each team playing tonight, determine:
 
 ### 6. compute analysis metrics
 
-write and run a python script that computes all of the following from the data collected in step 3:
+all of the following are computed by `run_analysis.py` and included in its JSON output. reference only — do NOT rewrite:
 
 **a. league-wide base rate**
 - total u2.5 games / total completed games across all dates fetched
