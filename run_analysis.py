@@ -567,7 +567,7 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
         sys_sum = sys_map.get(am["sys_class"], 0) + sys_map.get(hm["sys_class"], 0)
         f_sys = 1 if sys_sum >= 1 else (-1 if sys_sum <= -1 else 0)
 
-        # factor 5: goalie matchup (-1 to +1)
+        # factor 5: goalie matchup (-1 to +2)
         aw_goalie = tonight_goalies.get(away, am["starter_name"])
         hm_goalie = tonight_goalies.get(home, hm["starter_name"])
         aw_goalie_ln = aw_goalie.lower().split()[-1] if aw_goalie else "?"
@@ -579,7 +579,9 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
         aw_backup = aw_starts <= 2  # ≤2 starts in 15-game window = true backup
         hm_backup = hm_starts <= 2
 
-        if (aw_elite or hm_elite) and not aw_backup and not hm_backup:
+        if aw_elite and hm_elite:
+            f_goalie = 2
+        elif (aw_elite and not hm_backup) or (hm_elite and not aw_backup):
             f_goalie = 1
         elif (aw_elite and hm_backup) or (hm_elite and aw_backup):
             f_goalie = 0
