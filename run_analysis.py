@@ -456,7 +456,7 @@ def compute_team_metrics(teams_needed, games_tonight, team_games,
         # shot validation
         if sys_class == "structured" and avg_shots > 22:
             sys_class = "moderate"
-        elif sys_class == "moderate" and avg_shots <= 18:
+        elif sys_class == "moderate" and avg_shots <= 18 and blowups <= 3:
             sys_class = "structured"
         elif sys_class == "moderate" and avg_shots > 28:
             sys_class = "volatile"
@@ -550,22 +550,24 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
         elif comb_r5_pct >= 50:  f_r5 = 1
         else:                    f_r5 = 0
 
-        # factor 2: combined last 15 (0-2)
-        if comb_r15_pct >= 65:   f_r15 = 2
-        elif comb_r15_pct >= 50: f_r15 = 1
+        # factor 2: combined last 15 (0-3)
+        if comb_r15_pct >= 80:   f_r15 = 3
+        elif comb_r15_pct >= 70: f_r15 = 2
+        elif comb_r15_pct >= 60: f_r15 = 1
         else:                    f_r15 = 0
 
-        # factor 3: poisson (0-2)
-        if poisson_pct >= 75:    f_poi = 2
-        elif poisson_pct >= 60:  f_poi = 1
-        else:                    f_poi = 0
+        # factor 3: poisson (-1 to +2), edge-based
+        if poisson_edge >= 8:    f_poi = 2
+        elif poisson_edge >= 2:  f_poi = 1
+        elif poisson_edge >= -3: f_poi = 0
+        else:                    f_poi = -1
 
         # factor 4: system profile (-1 to +1)
         sys_map = {"structured": 1, "moderate": 0, "volatile": -1}
         sys_sum = sys_map.get(am["sys_class"], 0) + sys_map.get(hm["sys_class"], 0)
-        f_sys = 1 if sys_sum >= 2 else (-1 if sys_sum <= -2 else 0)
+        f_sys = 1 if sys_sum >= 1 else (-1 if sys_sum <= -1 else 0)
 
-        # factor 5: goalie matchup (-1 to +2)
+        # factor 5: goalie matchup (-1 to +1)
         aw_goalie = tonight_goalies.get(away, am["starter_name"])
         hm_goalie = tonight_goalies.get(home, hm["starter_name"])
         aw_goalie_ln = aw_goalie.lower().split()[-1] if aw_goalie else "?"
@@ -577,9 +579,7 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
         aw_backup = aw_starts <= 2  # ≤2 starts in 15-game window = true backup
         hm_backup = hm_starts <= 2
 
-        if aw_elite and hm_elite:
-            f_goalie = 2
-        elif (aw_elite and not hm_backup) or (hm_elite and not aw_backup):
+        if (aw_elite or hm_elite) and not aw_backup and not hm_backup:
             f_goalie = 1
         elif (aw_elite and hm_backup) or (hm_elite and aw_backup):
             f_goalie = 0
