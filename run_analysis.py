@@ -572,8 +572,10 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
         hm_goalie_ln = hm_goalie.lower().split()[-1] if hm_goalie else "?"
         aw_elite = aw_goalie_ln in ELITE_GOALIES
         hm_elite = hm_goalie_ln in ELITE_GOALIES
-        aw_backup = aw_goalie_ln != am["starter_name"]
-        hm_backup = hm_goalie_ln != hm["starter_name"]
+        aw_starts = am["goalie_starts"].get(aw_goalie_ln, 0)
+        hm_starts = hm["goalie_starts"].get(hm_goalie_ln, 0)
+        aw_backup = aw_starts <= 2  # ≤2 starts in 15-game window = true backup
+        hm_backup = hm_starts <= 2
 
         if aw_elite and hm_elite:
             f_goalie = 2
@@ -615,6 +617,7 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
             "b2b_teams": b2b_teams,
             "aw_goalie": aw_goalie_ln, "hm_goalie": hm_goalie_ln,
             "aw_backup": aw_backup, "hm_backup": hm_backup,
+            "aw_goalie_starts": aw_starts, "hm_goalie_starts": hm_starts,
             "confidence": total_conf,
             "factors": {
                 "r5": f_r5, "r15": f_r15, "poi": f_poi, "sys": f_sys,
