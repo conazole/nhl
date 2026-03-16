@@ -136,5 +136,5 @@
 {"date": "2026-03-16", "game": "bos @ njd", "pick": "1p u2.5", "confidence": 5, "poisson_pct": 65.7, "base_rate_pct": 73.2, "combined_recent5_pct": 80.0, "combined_last15_pct": 80.0, "total_line": 5.5, "model": "v2"}
 {"date": "2026-03-16", "game": "cgy @ det", "pick": "1p u2.5", "confidence": 3, "poisson_pct": 79.0, "base_rate_pct": 73.2, "combined_recent5_pct": 70.0, "combined_last15_pct": 80.0, "total_line": 5.5, "model": "v2"}
 {"date": "2026-03-16", "game": "uta @ dal", "pick": "1p u2.5", "confidence": 3, "poisson_pct": 79.9, "base_rate_pct": 73.2, "combined_recent5_pct": 60.0, "combined_last15_pct": 66.7, "total_line": 5.5, "model": "v2"}
-{"date": "2026-03-16", "game": "pit @ col", "pick": "1p u2.5", "confidence": 3, "poisson_pct": 65.7, "base_rate_pct": 73.2, "combined_recent5_pct": 70.0, "combined_last15_pct": 73.3, "total_line": 6.5, "model": "v2"}
 {"date": "2026-03-16", "game": "lak @ nyr", "pick": "1p u2.5", "confidence": 2, "poisson_pct": 73.0, "base_rate_pct": 73.2, "combined_recent5_pct": 60.0, "combined_last15_pct": 63.3, "total_line": 5.5, "model": "v2", "tier": "honorable_mention"}
+{"date": "2026-03-16", "game": "pit @ col", "pick": "1p u2.5", "confidence": 2, "poisson_pct": 65.7, "base_rate_pct": 73.2, "combined_recent5_pct": 70.0, "combined_last15_pct": 73.3, "total_line": 6.5, "model": "v2", "tier": "honorable_mention"}

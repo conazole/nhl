@@ -548,7 +548,7 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
         # poisson, r15, discipline, system, rest = noise (killed as scoring factors).
         # scale: /6. pick >= 3, honorable mention = 2, avoid < 2.
 
-        # goalie identification
+        # goalie identification + starts-share classification
         aw_goalie = tonight_goalies.get(away, am["starter_name"])
         hm_goalie = tonight_goalies.get(home, hm["starter_name"])
         aw_goalie_ln = aw_goalie.lower().split()[-1] if aw_goalie else "?"
@@ -557,9 +557,15 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
         hm_elite = hm_goalie_ln in ELITE_GOALIES
         aw_starts = am["goalie_starts"].get(aw_goalie_ln, 0)
         hm_starts = hm["goalie_starts"].get(hm_goalie_ln, 0)
-        # backup = not the team's most-used goalie in 15-game window
-        aw_backup = aw_goalie_ln != am["starter_name"]
-        hm_backup = hm_goalie_ln != hm["starter_name"]
+        aw_total = sum(am["goalie_starts"].values()) or 1
+        hm_total = sum(hm["goalie_starts"].values()) or 1
+        aw_share = aw_starts / aw_total
+        hm_share = hm_starts / hm_total
+        # starts-share classification: >=60% starter, 40-59% tandem, <40% backup
+        aw_cls = "starter" if aw_share >= 0.60 else ("tandem" if aw_share >= 0.40 else "backup")
+        hm_cls = "starter" if hm_share >= 0.60 else ("tandem" if hm_share >= 0.40 else "backup")
+        aw_backup = aw_cls == "backup"
+        hm_backup = hm_cls == "backup"
 
         # factor 1: combined recent 5 (0-3) — strongest signal (82.5% at r5>=80%)
         if comb_r5_pct >= 90:    f_r5 = 3
@@ -568,13 +574,16 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
         else:                    f_r5 = 0
 
         # factor 2: goalie matchup type (-1 to +2)
-        # both starters: 76.6% u2.5 | mixed: 74.3% | both backups: 60.0%
-        if not aw_backup and not hm_backup:
-            f_goalie = 2      # both starters
-        elif aw_backup and hm_backup:
-            f_goalie = -1     # both backups (hard red flag)
+        # starter vs starter: 80.0% | starter/tandem or tandem/tandem: 71-73% | both backups: 44%
+        pair = tuple(sorted([aw_cls, hm_cls]))
+        if pair == ("starter", "starter"):
+            f_goalie = 2
+        elif pair in (("starter", "tandem"), ("tandem", "tandem")):
+            f_goalie = 1
+        elif pair == ("backup", "backup"):
+            f_goalie = -1
         else:
-            f_goalie = 1      # mixed
+            f_goalie = 0  # one backup involved but not both
 
         # factor 3: elite goalie bonus (0-1)
         f_elite = 1 if (aw_elite or hm_elite) else 0
@@ -601,6 +610,9 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
             "aw_goalie": aw_goalie_ln, "hm_goalie": hm_goalie_ln,
             "aw_backup": aw_backup, "hm_backup": hm_backup,
             "aw_goalie_starts": aw_starts, "hm_goalie_starts": hm_starts,
+            "aw_goalie_share": round(aw_share * 100, 0),
+            "hm_goalie_share": round(hm_share * 100, 0),
+            "aw_goalie_cls": aw_cls, "hm_goalie_cls": hm_cls,
             "confidence": total_conf,
             "factors": {
                 "r5": f_r5, "goalie": f_goalie, "elite": f_elite,
