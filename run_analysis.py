@@ -543,31 +543,12 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
         if hm["rest_days"] == 1:
             b2b_teams.append(home)
 
-        # ----- confidence scoring -----
-        # factor 1: combined recent 5 (0-3)
-        if comb_r5_pct >= 90:    f_r5 = 3
-        elif comb_r5_pct >= 70:  f_r5 = 2
-        elif comb_r5_pct >= 50:  f_r5 = 1
-        else:                    f_r5 = 0
+        # ----- confidence scoring (v2: data-driven, mar 16 2026) -----
+        # backtested 135 games: only r5 and goalie matchup type predict outcomes.
+        # poisson, r15, discipline, system, rest = noise (killed as scoring factors).
+        # scale: /6. pick >= 3, honorable mention = 2, avoid < 2.
 
-        # factor 2: combined last 15 (0-3)
-        if comb_r15_pct >= 80:   f_r15 = 3
-        elif comb_r15_pct >= 70: f_r15 = 2
-        elif comb_r15_pct >= 60: f_r15 = 1
-        else:                    f_r15 = 0
-
-        # factor 3: poisson (-1 to +2), edge-based
-        if poisson_edge >= 8:    f_poi = 2
-        elif poisson_edge >= 2:  f_poi = 1
-        elif poisson_edge >= -3: f_poi = 0
-        else:                    f_poi = -1
-
-        # factor 4: system profile (-1 to +1)
-        sys_map = {"structured": 1, "moderate": 0, "volatile": -1}
-        sys_sum = sys_map.get(am["sys_class"], 0) + sys_map.get(hm["sys_class"], 0)
-        f_sys = 1 if sys_sum >= 1 else (-1 if sys_sum <= -1 else 0)
-
-        # factor 5: goalie matchup (-1 to +2)
+        # goalie identification
         aw_goalie = tonight_goalies.get(away, am["starter_name"])
         hm_goalie = tonight_goalies.get(home, hm["starter_name"])
         aw_goalie_ln = aw_goalie.lower().split()[-1] if aw_goalie else "?"
@@ -576,34 +557,34 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
         hm_elite = hm_goalie_ln in ELITE_GOALIES
         aw_starts = am["goalie_starts"].get(aw_goalie_ln, 0)
         hm_starts = hm["goalie_starts"].get(hm_goalie_ln, 0)
-        aw_backup = aw_starts <= 2  # ≤2 starts in 15-game window = true backup
-        hm_backup = hm_starts <= 2
+        # backup = not the team's most-used goalie in 15-game window
+        aw_backup = aw_goalie_ln != am["starter_name"]
+        hm_backup = hm_goalie_ln != hm["starter_name"]
 
-        if aw_elite and hm_elite:
-            f_goalie = 2
-        elif (aw_elite and not hm_backup) or (hm_elite and not aw_backup):
-            f_goalie = 1
-        elif (aw_elite and hm_backup) or (hm_elite and aw_backup):
-            f_goalie = 0
-        elif not aw_backup and not hm_backup:
-            f_goalie = 0
+        # factor 1: combined recent 5 (0-3) — strongest signal (82.5% at r5>=80%)
+        if comb_r5_pct >= 90:    f_r5 = 3
+        elif comb_r5_pct >= 80:  f_r5 = 2
+        elif comb_r5_pct >= 70:  f_r5 = 1
+        else:                    f_r5 = 0
+
+        # factor 2: goalie matchup type (-1 to +2)
+        # both starters: 76.6% u2.5 | mixed: 74.3% | both backups: 60.0%
+        if not aw_backup and not hm_backup:
+            f_goalie = 2      # both starters
+        elif aw_backup and hm_backup:
+            f_goalie = -1     # both backups (hard red flag)
         else:
-            f_goalie = -1
+            f_goalie = 1      # mixed
 
-        # factor 6: rest (-1 to 0)
-        f_rest = -1 if (am["rest_days"] >= 3 or hm["rest_days"] >= 3) else 0
+        # factor 3: elite goalie bonus (0-1)
+        f_elite = 1 if (aw_elite or hm_elite) else 0
 
-        # factor 7: discipline (-1 to +1)
+        total_conf = max(0, f_r5 + f_goalie + f_elite)
+
+        # informational factors (not in confidence, shown for context)
+        sys_map = {"structured": 1, "moderate": 0, "volatile": -1}
+        sys_sum = sys_map.get(am["sys_class"], 0) + sys_map.get(hm["sys_class"], 0)
         comb_pen = am["avg_pen"] + hm["avg_pen"]
-        if comb_pen <= 1.5:    f_disc = 1
-        elif comb_pen > 2.5:   f_disc = -1
-        else:                  f_disc = 0
-
-        # factor 8: context (always 0 — claude applies manually)
-        f_ctx = 0
-
-        total_conf = max(0, min(12,
-            f_r5 + f_r15 + f_poi + f_sys + f_goalie + f_rest + f_disc + f_ctx))
 
         matchups.append({
             "away": away, "home": home,
@@ -622,8 +603,11 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
             "aw_goalie_starts": aw_starts, "hm_goalie_starts": hm_starts,
             "confidence": total_conf,
             "factors": {
-                "r5": f_r5, "r15": f_r15, "poi": f_poi, "sys": f_sys,
-                "goalie": f_goalie, "rest": f_rest, "disc": f_disc, "ctx": f_ctx,
+                "r5": f_r5, "goalie": f_goalie, "elite": f_elite,
+            },
+            # informational (not in confidence score)
+            "info": {
+                "sys_sum": sys_sum, "comb_pen": round(comb_pen, 2),
             },
         })
 
