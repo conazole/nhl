@@ -175,10 +175,10 @@ def walk_scores(target_date, teams_needed, games_tonight):
                     os_ = asc if ih else hsc
                     wl = "w" if ts > os_ else ("l" if ts < os_ else "otl")
                     team_games[team].append({
-                        "date": ds, "game_id": gid, "opp": opp,
+                        "date": ds, "game_id": gid, "opp": opp.lower(),
                         "h_a": "h" if ih else "a",
                         "gf": gf, "ga": ga, "total_1p": t1p,
-                        "u25": u, "score": f"{ts}-{os_}", "wl": wl,
+                        "u25": u, "score": f"{gf}-{ga}", "wl": wl,
                         "full_total": asc + hsc,
                     })
                     gids.add(gid)
@@ -416,7 +416,7 @@ def compute_team_metrics(teams_needed, games_tonight, team_games,
         for g in games:
             gid = g["game_id"]
             xk = f"{gid}_{team}"
-            xk_opp = f"{gid}_{g['opp']}"
+            xk_opp = f"{gid}_{g['opp'].upper()}"
             if xk in xg_data:
                 xgf_list.append(xg_data[xk]["xgf"])
                 hdc_list.append(xg_data[xk]["hdc"])
