@@ -94,7 +94,7 @@ def extract_team_abbrev(val):
 # ============================================================
 
 def fetch_todays_games(target_date):
-    """return list of (away, home) tuples for the target date."""
+    """return list of (away, home, start_utc) tuples for the target date."""
     progress(f"fetching games for {target_date}...")
     try:
         data = api_get(SCORE_URL.format(target_date))
@@ -110,8 +110,9 @@ def fetch_todays_games(target_date):
             continue
         aw = normalize_abbrev(g.get("awayTeam", {}).get("abbrev", ""))
         hm = normalize_abbrev(g.get("homeTeam", {}).get("abbrev", ""))
+        start_utc = g.get("startTimeUTC", "")
         if aw and hm:
-            games.append((aw, hm))
+            games.append((aw, hm, start_utc))
     progress(f"  {len(games)} games found")
     return games
 
@@ -184,7 +185,7 @@ def walk_scores(target_date, teams_needed, games_tonight):
                     gids.add(gid)
 
             # h2h tracking
-            for a2, h2 in games_tonight:
+            for a2, h2, *_ in games_tonight:
                 if (aw == a2 and hm == h2) or (aw == h2 and hm == a2):
                     key = f"{a2}@{h2}"
                     h2h.setdefault(key, []).append({
@@ -372,7 +373,7 @@ def compute_team_metrics(teams_needed, games_tonight, team_games,
 
         # tonight's role
         tonight_ha = None
-        for aw, hm in games_tonight:
+        for aw, hm, *_ in games_tonight:
             if team == aw:
                 tonight_ha = "a"
                 break
@@ -511,7 +512,7 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
     progress("computing matchups...")
     matchups = []
 
-    for away, home in games_tonight:
+    for away, home, start_utc in games_tonight:
         am = team_metrics.get(away)
         hm = team_metrics.get(home)
         if not am or not hm:
@@ -546,7 +547,18 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
         # ----- confidence scoring (v2: data-driven, mar 16 2026) -----
         # backtested 135 games: only r5 and goalie matchup type predict outcomes.
         # poisson, r15, discipline, system, rest = noise (killed as scoring factors).
-        # scale: /6. pick >= 3, honorable mention = 2, avoid < 2.
+        # early start bonus added mar 23: 85.7% u2.5 on 42 games (full season).
+        # scale: /7. pick >= 3, honorable mention = 2, avoid < 2.
+
+        # early start detection: 11am or 12pm CST = 17:00 or 18:00 UTC
+        is_early = False
+        if start_utc:
+            try:
+                st = datetime.strptime(start_utc[:19], "%Y-%m-%dT%H:%M:%S")
+                cst_hour = (st.hour - 6) % 24
+                is_early = cst_hour in (11, 12)
+            except Exception:
+                pass
 
         # goalie identification + starts-share classification
         aw_goalie = tonight_goalies.get(away, am["starter_name"])
@@ -588,7 +600,10 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
         # factor 3: elite goalie bonus (0-1)
         f_elite = 1 if (aw_elite or hm_elite) else 0
 
-        total_conf = max(0, f_r5 + f_goalie + f_elite)
+        # factor 4: early start bonus (0-1) — 85.7% u2.5 on 42 games, +10.6% edge
+        f_early = 1 if is_early else 0
+
+        total_conf = max(0, f_r5 + f_goalie + f_elite + f_early)
 
         # informational factors (not in confidence, shown for context)
         sys_map = {"structured": 1, "moderate": 0, "volatile": -1}
@@ -614,8 +629,11 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
             "hm_goalie_share": round(hm_share * 100, 0),
             "aw_goalie_cls": aw_cls, "hm_goalie_cls": hm_cls,
             "confidence": total_conf,
+            "is_early": is_early,
+            "start_utc": start_utc,
             "factors": {
                 "r5": f_r5, "goalie": f_goalie, "elite": f_elite,
+                "early": f_early,
             },
             # informational (not in confidence score)
             "info": {
@@ -651,7 +669,7 @@ def main():
         sys.exit(1)
 
     teams_needed = set()
-    for a, h in games_tonight:
+    for a, h, *_ in games_tonight:
         teams_needed.add(a)
         teams_needed.add(h)
 
@@ -711,7 +729,7 @@ def main():
 
     output = {
         "target_date": target_date,
-        "games_tonight": games_tonight,
+        "games_tonight": [(a, h, s) for a, h, s in games_tonight],
         "league_total": league_total,
         "league_u25": league_u25,
         "base_rate": round(base_rate, 1),
