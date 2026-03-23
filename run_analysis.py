@@ -548,7 +548,8 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
         # backtested 135 games: only r5 and goalie matchup type predict outcomes.
         # poisson, r15, discipline, system, rest = noise (killed as scoring factors).
         # early start bonus added mar 23: 85.7% u2.5 on 42 games (full season).
-        # scale: /7. pick >= 3, honorable mention = 2, avoid < 2.
+        # goalie/elite only score when BOTH goalies confirmed (mar 23 fix).
+        # scale: /7. pick >= 5, honorable mention = 3-4, avoid < 3.
 
         # early start detection: 11am or 12pm CST = 17:00 or 18:00 UTC
         is_early = False
@@ -561,8 +562,14 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
                 pass
 
         # goalie identification + starts-share classification
-        aw_goalie = tonight_goalies.get(away, am["starter_name"])
-        hm_goalie = tonight_goalies.get(home, hm["starter_name"])
+        aw_ginfo = tonight_goalies.get(away, {"name": am["starter_name"], "confirmed": False})
+        hm_ginfo = tonight_goalies.get(home, {"name": hm["starter_name"], "confirmed": False})
+        aw_goalie = aw_ginfo["name"] if isinstance(aw_ginfo, dict) else str(aw_ginfo)
+        hm_goalie = hm_ginfo["name"] if isinstance(hm_ginfo, dict) else str(hm_ginfo)
+        aw_confirmed = aw_ginfo.get("confirmed", False) if isinstance(aw_ginfo, dict) else False
+        hm_confirmed = hm_ginfo.get("confirmed", False) if isinstance(hm_ginfo, dict) else False
+        both_confirmed = aw_confirmed and hm_confirmed
+
         aw_goalie_ln = aw_goalie.lower().split()[-1] if aw_goalie else "?"
         hm_goalie_ln = hm_goalie.lower().split()[-1] if hm_goalie else "?"
         aw_elite = aw_goalie_ln in ELITE_GOALIES
@@ -587,23 +594,28 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
 
         # factor 2: goalie matchup type (-1 to +2)
         # starter vs starter: 80.0% | starter/tandem or tandem/tandem: 71-73% | both backups: 44%
+        # ONLY scores when both goalies are confirmed. unconfirmed = 0.
         pair = tuple(sorted([aw_cls, hm_cls]))
         if pair == ("starter", "starter"):
-            f_goalie = 2
+            f_goalie_projected = 2
         elif pair in (("starter", "tandem"), ("tandem", "tandem")):
-            f_goalie = 1
+            f_goalie_projected = 1
         elif pair == ("backup", "backup"):
-            f_goalie = -1
+            f_goalie_projected = -1
         else:
-            f_goalie = 0  # one backup involved but not both
+            f_goalie_projected = 0
+        f_goalie = f_goalie_projected if both_confirmed else 0
 
         # factor 3: elite goalie bonus (0-1)
-        f_elite = 1 if (aw_elite or hm_elite) else 0
+        # ONLY scores when both goalies are confirmed.
+        f_elite_projected = 1 if (aw_elite or hm_elite) else 0
+        f_elite = f_elite_projected if both_confirmed else 0
 
         # factor 4: early start bonus (0-1) — 85.7% u2.5 on 42 games, +10.6% edge
         f_early = 1 if is_early else 0
 
         total_conf = max(0, f_r5 + f_goalie + f_elite + f_early)
+        total_conf_projected = max(0, f_r5 + f_goalie_projected + f_elite_projected + f_early)
 
         # informational factors (not in confidence, shown for context)
         sys_map = {"structured": 1, "moderate": 0, "volatile": -1}
@@ -631,9 +643,15 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
             "confidence": total_conf,
             "is_early": is_early,
             "start_utc": start_utc,
+            "aw_confirmed": aw_confirmed,
+            "hm_confirmed": hm_confirmed,
+            "both_confirmed": both_confirmed,
+            "confidence_projected": total_conf_projected,
             "factors": {
                 "r5": f_r5, "goalie": f_goalie, "elite": f_elite,
                 "early": f_early,
+                "goalie_projected": f_goalie_projected,
+                "elite_projected": f_elite_projected,
             },
             # informational (not in confidence score)
             "info": {
@@ -652,13 +670,20 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
 def main():
     parser = argparse.ArgumentParser(description="NHL 1P U2.5 analysis engine")
     parser.add_argument("date", help="target date YYYY-MM-DD")
-    parser.add_argument("--goalies", default="{}", help='JSON: {"TEAM":"goalie_lastname",...}')
+    parser.add_argument("--goalies", default="{}", help='JSON: {"TEAM":"name"} or {"TEAM":{"name":"x","confirmed":bool}}')
     args = parser.parse_args()
 
     target_date = args.date
-    tonight_goalies = json.loads(args.goalies)
-    # normalize goalie keys
-    tonight_goalies = {normalize_abbrev(k): v for k, v in tonight_goalies.items()}
+    raw_goalies = json.loads(args.goalies)
+    # normalize goalie keys and parse confirmation status
+    # accepts both old format {"TEAM":"name"} and new {"TEAM":{"name":"x","confirmed":true}}
+    tonight_goalies = {}
+    for k, v in raw_goalies.items():
+        nk = normalize_abbrev(k)
+        if isinstance(v, dict):
+            tonight_goalies[nk] = v  # {"name": "x", "confirmed": true/false}
+        else:
+            tonight_goalies[nk] = {"name": str(v), "confirmed": False}  # legacy = unconfirmed
 
     t0 = time.time()
 
