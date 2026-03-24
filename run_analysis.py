@@ -24,6 +24,8 @@ BOX_URL = "https://api-web.nhle.com/v1/gamecenter/{}/boxscore"
 PBP_URL = "https://api-web.nhle.com/v1/gamecenter/{}/play-by-play"
 MP_URL = "https://peter-tanner.com/moneypuck/downloads/shots_2025.zip"
 
+CLUB_STATS_URL = "https://api-web.nhle.com/v1/club-stats/{}/20252026/2"
+
 OLYMPIC_BREAK = ("2026-02-07", "2026-02-22")
 MAX_LOOKBACK_DAYS = 60
 GAMES_PER_TEAM = 15
@@ -87,6 +89,38 @@ def extract_team_abbrev(val):
     if isinstance(val, dict):
         return val.get("default", "").upper()
     return str(val).upper()
+
+
+# ============================================================
+# full-season goalie stats (for starter/tandem/backup classification)
+# ============================================================
+
+def fetch_season_goalie_stats(teams):
+    """fetch full-season goalie stats from NHL club-stats endpoint.
+    returns {TEAM: {goalie_last_name: {"gp": x, "gs": y, "share": z}, ...}}
+    """
+    progress("fetching full-season goalie stats...")
+    result = {}
+    for team in teams:
+        try:
+            data = api_get(CLUB_STATS_URL.format(team))
+            goalies = data.get("goalies", [])
+            team_total_gs = sum(g.get("gamesStarted", 0) for g in goalies) or 1
+            team_data = {}
+            for g in goalies:
+                ln = g.get("lastName", {}).get("default", "?").lower().split()[-1]
+                gs = g.get("gamesStarted", 0)
+                gp = g.get("gamesPlayed", 0)
+                share = gs / team_total_gs
+                team_data[ln] = {"gp": gp, "gs": gs, "share": round(share, 3),
+                                 "total_team_gs": team_total_gs}
+            result[team] = team_data
+            names = ", ".join(f"{n}({d['gs']}gs/{d['share']*100:.0f}%)" for n, d in team_data.items())
+            progress(f"  {team}: {names}")
+        except Exception as e:
+            progress(f"  {team}: failed ({e}), will fall back to 15-game window")
+            result[team] = {}
+    return result
 
 
 # ============================================================
@@ -507,9 +541,12 @@ def compute_team_metrics(teams_needed, games_tonight, team_games,
 # ============================================================
 
 def compute_matchups(games_tonight, team_metrics, h2h_data,
-                     league_avg_xga, base_rate, tonight_goalies):
+                     league_avg_xga, base_rate, tonight_goalies,
+                     season_goalie_stats=None):
     """compute matchup analysis and confidence scores."""
     progress("computing matchups...")
+    if season_goalie_stats is None:
+        season_goalie_stats = {}
     matchups = []
 
     for away, home, start_utc in games_tonight:
@@ -547,11 +584,13 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
         # ----- confidence scoring (v2: data-driven, mar 16 2026) -----
         # backtested 135 games: only r5 and goalie matchup type predict outcomes.
         # poisson, r15, discipline, system, rest = noise (killed as scoring factors).
-        # early start bonus added mar 23: 85.7% u2.5 on 42 games (full season).
-        # goalie/elite only score when BOTH goalies confirmed (mar 23 fix).
-        # scale: /7. pick >= 5, honorable mention = 3-4, avoid < 3.
+        # goalie/elite only score when BOTH goalies confirmed.
+        # goalie classification uses FULL-SEASON starts data (not 15-game window).
+        # early start: informational only (not in confidence score).
+        # scale: /6. pick >= 5, honorable mention = 3-4, avoid < 3.
 
         # early start detection: 11am or 12pm CST = 17:00 or 18:00 UTC
+        # (informational — not scored)
         is_early = False
         if start_utc:
             try:
@@ -561,7 +600,7 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
             except Exception:
                 pass
 
-        # goalie identification + starts-share classification
+        # goalie identification + FULL-SEASON starts-share classification
         aw_ginfo = tonight_goalies.get(away, {"name": am["starter_name"], "confirmed": False})
         hm_ginfo = tonight_goalies.get(home, {"name": hm["starter_name"], "confirmed": False})
         aw_goalie = aw_ginfo["name"] if isinstance(aw_ginfo, dict) else str(aw_ginfo)
@@ -574,12 +613,29 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
         hm_goalie_ln = hm_goalie.lower().split()[-1] if hm_goalie else "?"
         aw_elite = aw_goalie_ln in ELITE_GOALIES
         hm_elite = hm_goalie_ln in ELITE_GOALIES
-        aw_starts = am["goalie_starts"].get(aw_goalie_ln, 0)
-        hm_starts = hm["goalie_starts"].get(hm_goalie_ln, 0)
-        aw_total = sum(am["goalie_starts"].values()) or 1
-        hm_total = sum(hm["goalie_starts"].values()) or 1
-        aw_share = aw_starts / aw_total
-        hm_share = hm_starts / hm_total
+
+        # use full-season stats for classification; fall back to 15-game if unavailable
+        aw_season = season_goalie_stats.get(away, {}).get(aw_goalie_ln)
+        hm_season = season_goalie_stats.get(home, {}).get(hm_goalie_ln)
+
+        if aw_season:
+            aw_starts = aw_season["gs"]
+            aw_total = aw_season["total_team_gs"]
+            aw_share = aw_season["share"]
+        else:
+            aw_starts = am["goalie_starts"].get(aw_goalie_ln, 0)
+            aw_total = sum(am["goalie_starts"].values()) or 1
+            aw_share = aw_starts / aw_total
+
+        if hm_season:
+            hm_starts = hm_season["gs"]
+            hm_total = hm_season["total_team_gs"]
+            hm_share = hm_season["share"]
+        else:
+            hm_starts = hm["goalie_starts"].get(hm_goalie_ln, 0)
+            hm_total = sum(hm["goalie_starts"].values()) or 1
+            hm_share = hm_starts / hm_total
+
         # starts-share classification: >=60% starter, 40-59% tandem, <40% backup
         aw_cls = "starter" if aw_share >= 0.60 else ("tandem" if aw_share >= 0.40 else "backup")
         hm_cls = "starter" if hm_share >= 0.60 else ("tandem" if hm_share >= 0.40 else "backup")
@@ -593,7 +649,7 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
         else:                    f_r5 = 0
 
         # factor 2: goalie matchup type (-1 to +2)
-        # starter vs starter: 80.0% | starter/tandem or tandem/tandem: 71-73% | both backups: 44%
+        # uses FULL-SEASON starts share for classification
         # ONLY scores when both goalies are confirmed. unconfirmed = 0.
         pair = tuple(sorted([aw_cls, hm_cls]))
         if pair == ("starter", "starter"):
@@ -611,11 +667,11 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
         f_elite_projected = 1 if (aw_elite or hm_elite) else 0
         f_elite = f_elite_projected if both_confirmed else 0
 
-        # factor 4: early start bonus (0-1) — 85.7% u2.5 on 42 games, +10.6% edge
-        f_early = 1 if is_early else 0
+        # early start: informational only, NOT in confidence score
+        # (85.7% u2.5 on 42 games but too rare to be a core factor)
 
-        total_conf = max(0, f_r5 + f_goalie + f_elite + f_early)
-        total_conf_projected = max(0, f_r5 + f_goalie_projected + f_elite_projected + f_early)
+        total_conf = max(0, f_r5 + f_goalie + f_elite)
+        total_conf_projected = max(0, f_r5 + f_goalie_projected + f_elite_projected)
 
         # informational factors (not in confidence, shown for context)
         sys_map = {"structured": 1, "moderate": 0, "volatile": -1}
@@ -647,9 +703,12 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
             "hm_confirmed": hm_confirmed,
             "both_confirmed": both_confirmed,
             "confidence_projected": total_conf_projected,
+            "aw_season_gs": aw_starts,
+            "hm_season_gs": hm_starts,
+            "aw_season_total": aw_total,
+            "hm_season_total": hm_total,
             "factors": {
                 "r5": f_r5, "goalie": f_goalie, "elite": f_elite,
-                "early": f_early,
                 "goalie_projected": f_goalie_projected,
                 "elite_projected": f_elite_projected,
             },
@@ -719,9 +778,13 @@ def main():
             last = datetime.strptime(m["games"][0]["date"], "%Y-%m-%d")
             m["rest_days"] = (target_dt - last).days
 
+    # fetch full-season goalie stats for proper classification
+    season_goalie_stats = fetch_season_goalie_stats(teams_needed)
+
     # compute matchups
     matchups = compute_matchups(
-        games_tonight, metrics, h2h, league_avg_xga, base_rate, tonight_goalies)
+        games_tonight, metrics, h2h, league_avg_xga, base_rate, tonight_goalies,
+        season_goalie_stats)
 
     elapsed = time.time() - t0
     progress(f"\ndone in {elapsed:.1f}s")
