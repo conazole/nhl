@@ -623,12 +623,13 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
         if hm["rest_days"] == 1:
             b2b_teams.append(home)
 
-        # ----- confidence scoring (v3: rebuilt mar 23 2026) -----
-        # 3 factors: r5, r15 (confirmation), goalie signal (unified).
-        # goalie classification: full-season starts data.
-        # elite: dynamic top 10 by sv% (≥25 GS), not hardcoded.
-        # early start: informational only.
-        # scale: /7. pick >= 5, honorable mention = 3-4, avoid < 3.
+        # ----- confidence scoring (v3: rebuilt mar 24 2026) -----
+        # 3 factors validated on 892 games (nov 7 - mar 22):
+        #   r5 (0-2): 80%+ = best bucket (77.4%)
+        #   r15 (0-1): 70%+ confirmation (76.7%)
+        #   goalie matchup type (-1 to +2): starter vs starter = 81.0%
+        # elite bonus KILLED — noise on 892 games (75.0%, +0.4pp).
+        # scale: /5. pick >= 4, HM = 2-3, avoid < 2.
 
         # early start detection (informational — not scored)
         is_early = False
@@ -686,40 +687,39 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
         aw_backup = aw_cls == "backup"
         hm_backup = hm_cls == "backup"
 
-        # factor 1: combined recent 5 (0-3)
-        if comb_r5_pct >= 90:    f_r5 = 3
-        elif comb_r5_pct >= 80:  f_r5 = 2
+        # factor 1: combined recent 5 (0-2)
+        # 892-game backtest: r5 80-89% = 77.4% (+2.8pp), best bucket.
+        # r5>=90% = 75.2% (worse — regression). dropped +3 tier.
+        if comb_r5_pct >= 80:    f_r5 = 2
         elif comb_r5_pct >= 70:  f_r5 = 1
         else:                    f_r5 = 0
 
-        # factor 2: combined recent 15 (0-1) — confirmation signal
-        if comb_r15_pct >= 75:   f_r15 = 1
+        # factor 2: combined recent 15 (0-1)
+        # 892-game backtest: r15 70-79% = 76.7% (+2.1pp), sweet spot.
+        if comb_r15_pct >= 70:   f_r15 = 1
         else:                    f_r15 = 0
 
-        # factor 3: goalie signal (unified, -1 to +3)
-        # combines matchup type + elite quality into one factor.
-        # elite = dynamic top 10 by sv% with ≥25 GS (fetched each run).
+        # factor 3: goalie matchup type (-1 to +2)
+        # 892-game backtest: starter vs starter = 81.0% (+6.4pp) on 247 games.
+        # any backup = 66-69%. elite bonus = noise (75.0%, +0.4pp).
+        # matchup TYPE is the signal, not individual quality.
         # ONLY scores when both goalies confirmed. unconfirmed = 0.
-        n_elite = (1 if aw_elite else 0) + (1 if hm_elite else 0)
         pair = tuple(sorted([aw_cls, hm_cls]))
 
-        if n_elite >= 2:
-            # both elite confirmed — strongest under signal
-            f_goalie_projected = 3
-        elif n_elite == 1:
-            # one elite confirmed — elite presence IS the under signal
-            f_goalie_projected = 2
-        elif pair == ("starter", "starter"):
-            f_goalie_projected = 1
-        elif pair in (("starter", "tandem"), ("tandem", "tandem")):
-            f_goalie_projected = 1
+        if pair == ("starter", "starter"):
+            f_goalie_projected = 2    # 81.0% on 247 games
+        elif pair in (("starter", "tandem"),):
+            f_goalie_projected = 1    # 76.2% on 290 games
+        elif pair == ("tandem", "tandem"):
+            f_goalie_projected = 0    # 71.6% on 74 games
         elif pair == ("backup", "backup"):
-            f_goalie_projected = -1
+            f_goalie_projected = -1   # 69.0% on 29 games
         else:
-            # one backup, no elite
-            f_goalie_projected = 0
+            # any single backup involved (backup+starter or backup+tandem)
+            f_goalie_projected = -1   # 66-69% on 252 games
         f_goalie = f_goalie_projected if both_confirmed else 0
 
+        # scale: /5. pick >= 4, HM = 2-3, avoid < 2.
         total_conf = max(0, f_r5 + f_r15 + f_goalie)
         total_conf_projected = max(0, f_r5 + f_r15 + f_goalie_projected)
 
@@ -762,8 +762,9 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
             "aw_elite": aw_elite,
             "hm_elite": hm_elite,
             "factors": {
-                "r5": f_r5, "r15": f_r15, "goalie": f_goalie,
-                "goalie_projected": f_goalie_projected,
+                "r5": f_r5, "r15": f_r15,
+                "goalie": f_goalie, "goalie_projected": f_goalie_projected,
+                "goalie_pair": f"{pair[0]}+{pair[1]}",
             },
             # informational (not in confidence score)
             "info": {
