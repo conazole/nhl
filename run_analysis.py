@@ -538,12 +538,7 @@ def compute_team_metrics(teams_needed, games_tonight, team_games,
 
         # discipline + rest
         avg_pen = sum(pen_per_game) / n if pen_per_game else 1.0
-        last_game = datetime.strptime(games[0]["date"], "%Y-%m-%d")
-        rest_days = (datetime.strptime(games_tonight[0][0], "%Y-%m-%d")
-                     if False else  # placeholder
-                     0)
-        # compute rest from target date
-        # (target_date is not directly available here, derive from context)
+        # rest_days filled in by main() after metrics are computed
 
         metrics[team] = {
             "games": games,
