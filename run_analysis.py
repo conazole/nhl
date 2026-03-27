@@ -577,7 +577,8 @@ def compute_team_metrics(teams_needed, games_tonight, team_games,
 
 def compute_matchups(games_tonight, team_metrics, h2h_data,
                      league_avg_xga, base_rate, tonight_goalies,
-                     season_goalie_stats=None, elite_goalies=None):
+                     season_goalie_stats=None, elite_goalies=None,
+                     tonight_lines=None):
     """compute matchup analysis and confidence scores."""
     progress("computing matchups...")
     if season_goalie_stats is None:
@@ -618,10 +619,12 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
         if hm["rest_days"] == 1:
             b2b_teams.append(home)
 
-        # ----- confidence scoring (v3: rebuilt mar 24 2026) -----
-        # 3 factors validated on 892 games (nov 7 - mar 22):
+        # ----- confidence scoring (v4: mar 27 2026) -----
+        # 4 factors. v3 core (892 games) + line factor (1149 games):
         #   r5 (0-2): 80%+ = best bucket (77.4%)
         #   r15 (0-1): 70%+ confirmation (76.7%)
+        #   goalie (-1 to +2): matchup type (starter vs starter = 81.0%)
+        #   line (-1 to +1): 5.5=+1, 6.0=0, 6.5+=-1 (78.7% vs 72.6%)
         #   goalie matchup type (-1 to +2): starter vs starter = 81.0%
         # elite bonus KILLED — noise on 892 games (75.0%, +0.4pp).
         # scale: /5. pick >= 4, HM = 2-3, avoid < 2.
@@ -714,9 +717,21 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
             f_goalie_projected = -1   # 66-69% on 252 games
         f_goalie = f_goalie_projected if both_confirmed else 0
 
-        # scale: /5. pick >= 4, HM = 2-3, avoid < 2.
-        total_conf = max(0, f_r5 + f_r15 + f_goalie)
-        total_conf_projected = max(0, f_r5 + f_r15 + f_goalie_projected)
+        # factor 4: total line (-1 to +1) — v4, validated on 1149 games.
+        # 5.5 line = 78.7% u2.5 (282 games), 6.0 = 76.4% (496), 6.5 = 72.6% (365).
+        # line <= 6.0 is the gate; 6.5+ games are penalized.
+        game_line_key = f"{away}@{home}"
+        total_line = tonight_lines.get(game_line_key) if tonight_lines else None
+        if total_line is not None:
+            if total_line <= 5.5:     f_line = 1
+            elif total_line <= 6.0:   f_line = 0
+            else:                     f_line = -1   # 6.5+
+        else:
+            f_line = 0  # no line data = neutral
+
+        # v4 scale: /6. pick >= 5, HM = 2-4, avoid < 2.
+        total_conf = max(0, f_r5 + f_r15 + f_goalie + f_line)
+        total_conf_projected = max(0, f_r5 + f_r15 + f_goalie_projected + f_line)
 
         # informational factors (not in confidence, shown for context)
         sys_map = {"structured": 1, "moderate": 0, "volatile": -1}
@@ -756,10 +771,12 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
             "hm_sv_pct": hm_sv_pct,
             "aw_elite": aw_elite,
             "hm_elite": hm_elite,
+            "total_line": total_line,
             "factors": {
                 "r5": f_r5, "r15": f_r15,
                 "goalie": f_goalie, "goalie_projected": f_goalie_projected,
                 "goalie_pair": f"{pair[0]}+{pair[1]}",
+                "line": f_line,
             },
             # informational (not in confidence score)
             "info": {
@@ -779,6 +796,7 @@ def main():
     parser = argparse.ArgumentParser(description="NHL 1P U2.5 analysis engine")
     parser.add_argument("date", help="target date YYYY-MM-DD")
     parser.add_argument("--goalies", default="{}", help='JSON: {"TEAM":"name"} or {"TEAM":{"name":"x","confirmed":bool}}')
+    parser.add_argument("--lines", default="{}", help='JSON: {"AWAY@HOME": 6.5, ...} pre-game total lines')
     args = parser.parse_args()
 
     target_date = args.date
@@ -792,6 +810,12 @@ def main():
             tonight_goalies[nk] = v  # {"name": "x", "confirmed": true/false}
         else:
             tonight_goalies[nk] = {"name": str(v), "confirmed": False}  # legacy = unconfirmed
+
+    # parse total lines: {"AWAY@HOME": 6.5, ...}
+    raw_lines = json.loads(args.lines)
+    tonight_lines = {}
+    for k, v in raw_lines.items():
+        tonight_lines[k.upper()] = float(v)
 
     t0 = time.time()
 
@@ -833,7 +857,7 @@ def main():
     # compute matchups
     matchups = compute_matchups(
         games_tonight, metrics, h2h, league_avg_xga, base_rate, tonight_goalies,
-        season_goalie_stats, elite_goalies)
+        season_goalie_stats, elite_goalies, tonight_lines)
 
     elapsed = time.time() - t0
     progress(f"\ndone in {elapsed:.1f}s")
