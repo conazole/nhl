@@ -22,11 +22,14 @@ SCORE_URL = "https://api-web.nhle.com/v1/score/{}"
 SCHED_URL = "https://api-web.nhle.com/v1/schedule/now"
 BOX_URL = "https://api-web.nhle.com/v1/gamecenter/{}/boxscore"
 PBP_URL = "https://api-web.nhle.com/v1/gamecenter/{}/play-by-play"
-MP_URL = "https://peter-tanner.com/moneypuck/downloads/shots_2025.zip"
+MP_URL_TEMPLATE = "https://peter-tanner.com/moneypuck/downloads/shots_{}.zip"
 
-CLUB_STATS_URL = "https://api-web.nhle.com/v1/club-stats/{}/20252026/2"
+CLUB_STATS_URL_TEMPLATE = "https://api-web.nhle.com/v1/club-stats/{{}}/{}/2"
 
-OLYMPIC_BREAK = ("2026-02-07", "2026-02-22")
+# olympic breaks by season start year (only seasons with confirmed NHL participation)
+OLYMPIC_BREAKS = {
+    2025: ("2026-02-07", "2026-02-22"),  # 2026 milan-cortina
+}
 MAX_LOOKBACK_DAYS = 60
 GAMES_PER_TEAM = 15
 BATCH_SIZE = 30
@@ -39,10 +42,38 @@ ALL_TEAMS = ["ANA", "BOS", "BUF", "CGY", "CAR", "CHI", "COL", "CBJ",
 ELITE_MIN_GS = 25   # minimum games started to qualify for elite
 ELITE_TOP_N = 10     # top N by save% = elite
 
+# set by main() — used by helpers to derive season-specific values
+_TARGET_DATE = None
+
 
 # ============================================================
 # utilities
 # ============================================================
+
+def season_from_date(date_str):
+    """derive season start year from a date string. oct+ = this year, jan-sep = last year."""
+    dt = datetime.strptime(date_str, "%Y-%m-%d")
+    return dt.year if dt.month >= 10 else dt.year - 1
+
+def season_id(date_str):
+    """e.g., '2026-03-27' -> '20252026'"""
+    y = season_from_date(date_str)
+    return f"{y}{y + 1}"
+
+def game_id_offset(date_str):
+    """e.g., '2026-03-27' -> 2025000000"""
+    return season_from_date(date_str) * 1000000
+
+def mp_url(date_str):
+    return MP_URL_TEMPLATE.format(season_from_date(date_str))
+
+def club_stats_url(date_str):
+    return CLUB_STATS_URL_TEMPLATE.format(season_id(date_str))
+
+def olympic_break(date_str):
+    """return (start, end) tuple if this season has an olympic break, else None."""
+    return OLYMPIC_BREAKS.get(season_from_date(date_str))
+
 
 def progress(msg):
     print(msg, file=sys.stderr, flush=True)
@@ -100,7 +131,7 @@ def extract_team_abbrev(val):
 def fetch_one_team_stats(team):
     """fetch club-stats for one team. returns (team, goalies_dict)."""
     try:
-        data = api_get(CLUB_STATS_URL.format(team))
+        data = api_get(club_stats_url(_TARGET_DATE).format(team))
         goalies = data.get("goalies", [])
         team_total_gs = sum(g.get("gamesStarted", 0) for g in goalies) or 1
         team_data = {}
@@ -199,15 +230,16 @@ def walk_scores(target_date, teams_needed, games_tonight):
     h2h = {}
     gids = set()
 
-    ob_start = datetime.strptime(OLYMPIC_BREAK[0], "%Y-%m-%d")
-    ob_end = datetime.strptime(OLYMPIC_BREAK[1], "%Y-%m-%d")
+    ob = olympic_break(target_date)
+    ob_start = datetime.strptime(ob[0], "%Y-%m-%d") if ob else None
+    ob_end = datetime.strptime(ob[1], "%Y-%m-%d") if ob else None
     cur = datetime.strptime(target_date, "%Y-%m-%d") - timedelta(days=1)
     min_dt = cur - timedelta(days=MAX_LOOKBACK_DAYS)
     n_fetched = 0
 
     while cur >= min_dt:
         ds = cur.strftime("%Y-%m-%d")
-        if ob_start <= cur <= ob_end:
+        if ob_start and ob_start <= cur <= ob_end:
             cur -= timedelta(days=1)
             continue
         try:
@@ -368,15 +400,16 @@ def fetch_moneypuck(gids):
     mpok = False
 
     try:
-        req = urllib.request.Request(MP_URL, headers=HDR)
+        req = urllib.request.Request(mp_url(_TARGET_DATE), headers=HDR)
         with urllib.request.urlopen(req, timeout=120) as r:
             zb = r.read()
         progress(f"  downloaded {len(zb) / 1024 / 1024:.1f}MB")
 
         # build lookup: try both full ID and offset ID
         id_set_full = set(gids)
-        id_set_offset = {g - 2025000000 for g in gids}
-        offset_map = {g - 2025000000: g for g in gids}
+        _offset = game_id_offset(_TARGET_DATE)
+        id_set_offset = {g - _offset for g in gids}
+        offset_map = {g - _offset: g for g in gids}
 
         with zipfile.ZipFile(io.BytesIO(zb)) as zf:
             cn = zf.namelist()[0]
@@ -627,7 +660,6 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
         #   line (-1 to +1): 5.5=+1, 6.0=0, 6.5+=-1 (78.7% vs 72.6%)
         #   goalie matchup type (-1 to +2): starter vs starter = 81.0%
         # elite bonus KILLED — noise on 892 games (75.0%, +0.4pp).
-        # scale: /5. pick >= 4, HM = 2-3, avoid < 2.
 
         # early start detection (informational — not scored)
         is_early = False
@@ -800,6 +832,8 @@ def main():
     args = parser.parse_args()
 
     target_date = args.date
+    global _TARGET_DATE
+    _TARGET_DATE = target_date
     raw_goalies = json.loads(args.goalies)
     # normalize goalie keys and parse confirmation status
     # accepts both old format {"TEAM":"name"} and new {"TEAM":{"name":"x","confirmed":true}}
