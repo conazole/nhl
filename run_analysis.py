@@ -747,7 +747,7 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
         else:
             # any single backup involved (backup+starter or backup+tandem)
             f_goalie_projected = -1   # 66-69% on 252 games
-        f_goalie = f_goalie_projected if both_confirmed else 0
+        f_goalie = f_goalie_projected  # always score — confirmed flag is informational only
 
         # factor 4: total line (-1 to +1) — v4, validated on 1149 games.
         # 5.5 line = 78.7% u2.5 (282 games), 6.0 = 76.4% (496), 6.5 = 72.6% (365).
