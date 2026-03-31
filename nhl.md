@@ -374,7 +374,7 @@ send a **concise, human-readable** summary to `wick.5@icloud.com` via macOS Mail
 
 **important**: the email is NOT the terminal output. it's a clean, scannable version for reading on a phone.
 
-- subject: "nhl 1p u2.5 — {date}"
+- subject: "{MM/DD}: nhl 1p u2.5" (e.g. "03/31: nhl 1p u2.5") — date-first prevents Mail threading
 - use `osascript` to compose and send via Mail.app
 
 **email format:**
