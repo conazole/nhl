@@ -193,12 +193,12 @@ def format_postmortem(entries, yesterday, postmortem_text):
 # ── 15-game table ──
 
 def format_table(team_abbr, team_data, line_lookup):
-    header = "  #   date        opp  h/a  score  total  u2.5  w/l  line  ft   g"
-    sep    = "  ─── ──────────  ───  ───  ─────  ─────  ────  ───  ────  ───  ─"
+    header = "  #   date   opp  h/a  score  total  u2.5  w/l  line  ft   g"
+    sep    = "  ─── ─────  ───  ───  ─────  ─────  ────  ───  ────  ───  ─"
     rows = [header, sep]
     for i, g in enumerate(team_data["games"]):
         num = i + 1
-        date = g["date"]
+        date = g["date"][5:]  # strip year: "2026-03-31" → "03-31"
         opp = g["opp"].lower()
         ha = g["h_a"]
         score = g["score"]
