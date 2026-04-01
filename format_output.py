@@ -240,7 +240,8 @@ def format_game(m, teams, line_lookup, injuries, context_map):
     out.append("")
     out.append(f"  📊 recent 5: {at['r5_u25']}/5 ({at['r5_u25']*20}%) | last 15: {at['r15_u25']}/15 ({at['r15_u25']/15*100:.1f}%)")
     venue = "road" if at["tonight_ha"] == "a" else "home"
-    out.append(f"  🏟️  on {venue}: {at['venue_u25']}/{at['venue_total']} u2.5 ({at['venue_u25']/at['venue_total']*100:.1f}%)")
+    v_pct = at['venue_u25']/at['venue_total']*100 if at['venue_total'] > 0 else 0.0
+    out.append(f"  🏟️  on {venue}: {at['venue_u25']}/{at['venue_total']} u2.5 ({v_pct:.1f}%)")
     out.append(f"  ⚡ wavg 1p gf: {at['wavg_gf']:.3f} | xgf: {at['wavg_xgf']:.3f} | xga: {at['wavg_xga']:.3f}")
     out.append(f"  🔧 system: {at['sys_class']} | avg 1p total: {at['avg_1p_total']:.2f} | blowups: {at['blowups']}/15")
     out.append("")
@@ -252,7 +253,8 @@ def format_game(m, teams, line_lookup, injuries, context_map):
     out.append("")
     out.append(f"  📊 recent 5: {ht['r5_u25']}/5 ({ht['r5_u25']*20}%) | last 15: {ht['r15_u25']}/15 ({ht['r15_u25']/15*100:.1f}%)")
     venue_h = "home" if ht["tonight_ha"] == "h" else "road"
-    out.append(f"  🏟️  on {venue_h}: {ht['venue_u25']}/{ht['venue_total']} u2.5 ({ht['venue_u25']/ht['venue_total']*100:.1f}%)")
+    vh_pct = ht['venue_u25']/ht['venue_total']*100 if ht['venue_total'] > 0 else 0.0
+    out.append(f"  🏟️  on {venue_h}: {ht['venue_u25']}/{ht['venue_total']} u2.5 ({vh_pct:.1f}%)")
     out.append(f"  ⚡ wavg 1p gf: {ht['wavg_gf']:.3f} | xgf: {ht['wavg_xgf']:.3f} | xga: {ht['wavg_xga']:.3f}")
     out.append(f"  🔧 system: {ht['sys_class']} | avg 1p total: {ht['avg_1p_total']:.2f} | blowups: {ht['blowups']}/15")
     out.append("")
@@ -396,8 +398,15 @@ def main():
     injuries = extras.get("injuries", {})
     context_map = extras.get("context", {})
 
+    all_entries = []
     with open(LOG_PATH, "r") as f:
-        all_entries = [json.loads(l) for l in f if l.strip()]
+        for line_no, line in enumerate(f, 1):
+            if not line.strip():
+                continue
+            try:
+                all_entries.append(json.loads(line))
+            except json.JSONDecodeError:
+                print(f"warning: picks_log line {line_no} is invalid JSON, skipping", file=sys.stderr)
 
     line_lookup = build_line_lookup(all_entries)
     record = compute_season_record(all_entries)

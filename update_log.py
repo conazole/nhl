@@ -8,13 +8,40 @@ removes all existing entries for TARGET_DATE (re-runs replace, never
 duplicate). entries with a "result" field are never touched. appends
 new entries from the JSON argument.
 
-each entry must have at minimum: game, confidence, model.
-the script adds: date, pick ("1p u2.5").
+each entry must have at minimum: game, confidence.
+the script adds: date, pick ("1p u2.5"), model ("v4" default).
 """
 
-import json, sys, argparse
+import json, sys, os, argparse, tempfile, shutil
 
 LOG_PATH = "/Users/raz/claude/nhl/picks_log.jsonl"
+
+
+def read_log():
+    """read picks_log.jsonl with error handling for malformed lines."""
+    entries = []
+    with open(LOG_PATH, "r") as f:
+        for line_no, line in enumerate(f, 1):
+            if not line.strip():
+                continue
+            try:
+                entries.append(json.loads(line))
+            except json.JSONDecodeError as e:
+                print(f"warning: line {line_no} is invalid JSON, skipping: {e}", file=sys.stderr)
+    return entries
+
+
+def write_log(entries):
+    """write picks_log.jsonl atomically (temp file + rename)."""
+    fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(LOG_PATH), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            for e in entries:
+                f.write(json.dumps(e) + "\n")
+        shutil.move(tmp_path, LOG_PATH)
+    except Exception:
+        os.unlink(tmp_path)
+        raise
 
 
 def main():
@@ -27,8 +54,7 @@ def main():
     new_entries = json.loads(args.entries_json)
 
     # load existing log
-    with open(LOG_PATH, "r") as f:
-        entries = [json.loads(l) for l in f if l.strip()]
+    entries = read_log()
 
     # remove existing entries for target_date that DON'T have results
     # (resolved entries are sacred — never touch them)
@@ -58,10 +84,8 @@ def main():
         kept.append(entry)
         added += 1
 
-    # write back
-    with open(LOG_PATH, "w") as f:
-        for e in kept:
-            f.write(json.dumps(e) + "\n")
+    # write back (atomic)
+    write_log(kept)
 
     result = {"removed": removed, "added": added, "total": len(kept)}
     print(json.dumps(result))

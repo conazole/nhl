@@ -24,7 +24,7 @@ output JSON schema:
 }
 """
 
-import json, sys, urllib.request, argparse
+import json, sys, os, urllib.request, argparse, tempfile, shutil
 from datetime import datetime, timedelta
 from collections import defaultdict
 
@@ -37,6 +37,33 @@ def api_get(url, timeout=20):
     req = urllib.request.Request(url, headers=HDR)
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read().decode())
+
+
+def read_log():
+    """read picks_log.jsonl with error handling for malformed lines."""
+    entries = []
+    with open(LOG_PATH, "r") as f:
+        for line_no, line in enumerate(f, 1):
+            if not line.strip():
+                continue
+            try:
+                entries.append(json.loads(line))
+            except json.JSONDecodeError as e:
+                print(f"warning: line {line_no} is invalid JSON, skipping: {e}", file=sys.stderr)
+    return entries
+
+
+def write_log(entries):
+    """write picks_log.jsonl atomically (temp file + rename)."""
+    fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(LOG_PATH), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            for e in entries:
+                f.write(json.dumps(e) + "\n")
+        shutil.move(tmp_path, LOG_PATH)
+    except Exception:
+        os.unlink(tmp_path)
+        raise
 
 
 def normalize_abbrev(abbrev):
@@ -98,8 +125,7 @@ def main():
     yesterday = (target - timedelta(days=1)).strftime("%Y-%m-%d")
 
     # load log
-    with open(LOG_PATH, "r") as f:
-        entries = [json.loads(l) for l in f if l.strip()]
+    entries = read_log()
 
     # find unresolved entries for yesterday
     unresolved = [e for e in entries if e["date"] == yesterday and "result" not in e]
@@ -147,10 +173,8 @@ def main():
     # remove phantom entries
     entries = [e for e in entries if not e.get("_remove")]
 
-    # write updated log
-    with open(LOG_PATH, "w") as f:
-        for e in entries:
-            f.write(json.dumps(e) + "\n")
+    # write updated log (atomic)
+    write_log(entries)
 
     # compute parlay result for yesterday
     picks_y = [r for r in resolved if r["tier"] is None]

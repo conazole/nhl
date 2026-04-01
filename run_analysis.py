@@ -259,7 +259,7 @@ def walk_scores(target_date, teams_needed, games_tonight):
             a1p = h1p = 0
             for gl in g.get("goals", []):
                 if gl.get("period") == 1:
-                    ta = extract_team_abbrev(gl.get("teamAbbrev", ""))
+                    ta = normalize_abbrev(extract_team_abbrev(gl.get("teamAbbrev", "")))
                     if ta == aw:
                         a1p += 1
                     elif ta == hm:
@@ -761,7 +761,7 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
         else:
             f_line = 0  # no line data = neutral
 
-        # v4 scale: /6. pick >= 5, HM = 2-4, avoid < 2.
+        # v4 scale: /6. pick >= 4, HM = 2-3, avoid < 2.
         total_conf = max(0, f_r5 + f_r15 + f_goalie + f_line)
         total_conf_projected = max(0, f_r5 + f_r15 + f_goalie_projected + f_line)
 
