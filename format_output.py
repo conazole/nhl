@@ -260,7 +260,13 @@ def format_game(m, teams, line_lookup, injuries, context_map):
     out.append("")
 
     # ── combined stats ──
-    h2h_str = ", ".join(m["h2h"]) if m["h2h"] else "none in window"
+    if m["h2h"]:
+        h2h_parts = []
+        for h in m["h2h"]:
+            h2h_parts.append(f"{h['date'][5:]} {h['away'].lower()}@{h['home'].lower()} 1p:{h['total_1p']}")
+        h2h_str = ", ".join(h2h_parts)
+    else:
+        h2h_str = "none in window"
     b2b_str = ", ".join(m["b2b_teams"]) if m["b2b_teams"] else "none"
     out.append(f"  🔗 combined r5: {m['comb_r5']}/10 ({m['comb_r5_pct']:.0f}%) | r15: {m['comb_r15']}/30 ({m['comb_r15_pct']:.1f}%)")
     out.append(f"  🤝 h2h: {h2h_str}")
