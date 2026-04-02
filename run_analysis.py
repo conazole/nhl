@@ -8,7 +8,7 @@ usage:
 outputs JSON to stdout. progress to stderr.
 """
 
-import json, sys, urllib.request, time, zipfile, csv, io, argparse
+import json, sys, urllib.request, time, zipfile, csv, io, argparse, os, hashlib
 from datetime import datetime, timedelta
 from math import exp, factorial
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -34,6 +34,9 @@ MAX_LOOKBACK_DAYS = 60
 GAMES_PER_TEAM = 15
 BATCH_SIZE = 30
 MAX_WORKERS = 25
+
+# file-based cache for immutable API data (finished games never change)
+CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".cache")
 
 ALL_TEAMS = ["ANA", "BOS", "BUF", "CGY", "CAR", "CHI", "COL", "CBJ",
              "DAL", "DET", "EDM", "FLA", "LAK", "MIN", "MTL", "NSH",
@@ -77,6 +80,26 @@ def olympic_break(date_str):
 
 def progress(msg):
     print(msg, file=sys.stderr, flush=True)
+
+
+def _cache_path(bucket, key):
+    d = os.path.join(CACHE_DIR, bucket)
+    os.makedirs(d, exist_ok=True)
+    return os.path.join(d, f"{key}.json")
+
+
+def cache_get(bucket, key):
+    p = _cache_path(bucket, key)
+    if os.path.exists(p):
+        with open(p, "r") as f:
+            return json.load(f)
+    return None
+
+
+def cache_put(bucket, key, data):
+    p = _cache_path(bucket, key)
+    with open(p, "w") as f:
+        json.dump(data, f)
 
 
 def api_get(url, timeout=20):
@@ -243,7 +266,14 @@ def walk_scores(target_date, teams_needed, games_tonight):
             cur -= timedelta(days=1)
             continue
         try:
-            data = api_get(SCORE_URL.format(ds))
+            cacheable = cur < (datetime.strptime(target_date, "%Y-%m-%d") - timedelta(days=1))
+            cached = cache_get("scores", ds) if cacheable else None
+            if cached:
+                data = cached
+            else:
+                data = api_get(SCORE_URL.format(ds))
+                if cacheable:
+                    cache_put("scores", ds, data)
             n_fetched += 1
         except Exception:
             cur -= timedelta(days=1)
@@ -318,7 +348,11 @@ def walk_scores(target_date, teams_needed, games_tonight):
 # ============================================================
 
 def fetch_game_details(gid):
-    """fetch boxscore + play-by-play for one game."""
+    """fetch boxscore + play-by-play for one game (with cache)."""
+    cached = cache_get("games", str(gid))
+    if cached:
+        return cached
+
     result = {"game_id": gid}
 
     # --- boxscore ---
@@ -367,13 +401,16 @@ def fetch_game_details(gid):
         result.update({"pbp_away": "", "pbp_home": "",
                        "away_shots": 0, "home_shots": 0,
                        "away_pen": 0, "home_pen": 0})
+
+    cache_put("games", str(gid), result)
     return result
 
 
 def fetch_all_game_details(gids):
-    """fetch boxscore + pbp for all games using threading."""
+    """fetch boxscore + pbp for all games using threading (with cache)."""
     gid_list = list(gids)
-    progress(f"phase 2+3: fetching {len(gid_list)} boxscores + play-by-play...")
+    cached_n = sum(1 for g in gid_list if cache_get("games", str(g)) is not None)
+    progress(f"phase 2+3: {len(gid_list)} games ({cached_n} cached, {len(gid_list) - cached_n} to fetch)...")
     results = {}
     for i in range(0, len(gid_list), BATCH_SIZE):
         batch = gid_list[i:i + BATCH_SIZE]
@@ -393,17 +430,32 @@ def fetch_all_game_details(gids):
 # ============================================================
 
 def fetch_moneypuck(gids):
-    """download moneypuck CSV, extract period-1 xG data."""
+    """download moneypuck CSV, extract period-1 xG data (cached 24h)."""
     progress("phase 4: downloading moneypuck xG...")
     xg = {}
     all_game_team_xgf = {}  # ALL game-teams for league avg (not just ours)
     mpok = False
 
     try:
-        req = urllib.request.Request(mp_url(_TARGET_DATE), headers=HDR)
-        with urllib.request.urlopen(req, timeout=120) as r:
-            zb = r.read()
-        progress(f"  downloaded {len(zb) / 1024 / 1024:.1f}MB")
+        mp_cache = os.path.join(CACHE_DIR, "moneypuck")
+        os.makedirs(mp_cache, exist_ok=True)
+        cache_file = os.path.join(mp_cache, f"shots_{season_from_date(_TARGET_DATE)}.zip")
+        use_cached = False
+        if os.path.exists(cache_file):
+            age_h = (time.time() - os.path.getmtime(cache_file)) / 3600
+            if age_h < 24:
+                use_cached = True
+        if use_cached:
+            with open(cache_file, "rb") as f:
+                zb = f.read()
+            progress(f"  loaded from cache ({len(zb) / 1024 / 1024:.1f}MB)")
+        else:
+            req = urllib.request.Request(mp_url(_TARGET_DATE), headers=HDR)
+            with urllib.request.urlopen(req, timeout=120) as r:
+                zb = r.read()
+            with open(cache_file, "wb") as f:
+                f.write(zb)
+            progress(f"  downloaded {len(zb) / 1024 / 1024:.1f}MB")
 
         # build lookup: try both full ID and offset ID
         id_set_full = set(gids)
