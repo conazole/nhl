@@ -598,14 +598,13 @@ def main():
         fut_dfo = ex.submit(fetch_dfo_goalies)
         fut_nhl = ex.submit(fetch_nhl_goalies)
         fut_espn = ex.submit(fetch_espn_lines, target_date)
-        fut_odds = ex.submit(fetch_oddsshark_lines, games, target_date)
         fut_inj = ex.submit(fetch_injuries, teams_needed)
 
         dfo_goalies = fut_dfo.result()
         nhl_goalies = fut_nhl.result()
         espn_lines = fut_espn.result()
-        odds_lines = fut_odds.result()
         injuries = fut_inj.result()
+    odds_lines = {}  # oddsshark generic page scraping is unreliable — disabled
 
     # collect errors from failed sources
     if "_error" in dfo_goalies:
@@ -628,12 +627,40 @@ def main():
                 "confirmed": info["confirmed"],
             }
 
+    # flag lines that need manual verification
+    # ESPN is known to round 6.0 → 5.5 or 6.5. since 6.0 is the most common
+    # line (43% of games) and 6.5 triggers a -1 penalty in the model, any game
+    # ESPN shows as 6.5 COULD actually be 6.0 — which changes the pick decision.
+    # the agent MUST verify these with an additional source before running the engine.
+    lines_needing_verification = []
+    for key, val in merged_lines.items():
+        espn_val = espn_lines.get(key)
+        odds_val = odds_lines.get(key)
+        if espn_val is not None and odds_val is not None and espn_val != odds_val:
+            lines_needing_verification.append({
+                "game": key, "espn": espn_val, "oddsshark": odds_val,
+                "using": val, "reason": "sources disagree"
+            })
+        elif espn_val == 6.5 and odds_val is None:
+            # ESPN says 6.5 but no second source to verify — could be 6.0
+            lines_needing_verification.append({
+                "game": key, "espn": espn_val,
+                "using": val, "reason": "ESPN 6.5 unverified — could be 6.0"
+            })
+        elif espn_val == 5.5 and odds_val is None:
+            # less critical but ESPN could be rounding down from 6.0
+            lines_needing_verification.append({
+                "game": key, "espn": espn_val,
+                "using": val, "reason": "ESPN 5.5 unverified — could be 6.0"
+            })
+
     output = {
         "target_date": target_date,
         "games": games,
         "goalies": merged_goalies,
         "goalies_engine": goalies_for_engine,
         "lines": merged_lines,
+        "lines_needing_verification": lines_needing_verification,
         "injuries": injuries,
         "errors": errors,
         "source_counts": {
