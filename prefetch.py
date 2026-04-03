@@ -21,7 +21,7 @@ for verification.
 
 import json, sys, os, re, urllib.request, argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
+from datetime import datetime, timedelta
 from html.parser import HTMLParser
 
 HDR = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -353,74 +353,90 @@ def fetch_espn_lines(target_date):
 
 
 # ============================================================
-# line fetching — OddsShark (backup source for 6.0 detection)
+# line fetching — Pinnacle (sharpest book, public JSON API)
 # ============================================================
 
-def fetch_oddsshark_lines(games, target_date):
-    """fetch lines from oddsshark for specific games.
-    games = [("AWAY", "HOME"), ...]
+PINNACLE_NHL_LEAGUE_ID = 1456  # NHL league ID in Pinnacle's system
+
+# pinnacle team names → our abbreviations
+PINNACLE_TEAM_MAP = {
+    "Anaheim Ducks": "ANA", "Boston Bruins": "BOS", "Buffalo Sabres": "BUF",
+    "Calgary Flames": "CGY", "Carolina Hurricanes": "CAR", "Chicago Blackhawks": "CHI",
+    "Colorado Avalanche": "COL", "Columbus Blue Jackets": "CBJ", "Dallas Stars": "DAL",
+    "Detroit Red Wings": "DET", "Edmonton Oilers": "EDM", "Florida Panthers": "FLA",
+    "Los Angeles Kings": "LAK", "Minnesota Wild": "MIN", "Montreal Canadiens": "MTL",
+    "Nashville Predators": "NSH", "New Jersey Devils": "NJD", "New York Islanders": "NYI",
+    "New York Rangers": "NYR", "Ottawa Senators": "OTT", "Philadelphia Flyers": "PHI",
+    "Pittsburgh Penguins": "PIT", "San Jose Sharks": "SJS", "Seattle Kraken": "SEA",
+    "St. Louis Blues": "STL", "Tampa Bay Lightning": "TBL", "Toronto Maple Leafs": "TOR",
+    "Utah Hockey Club": "UTA", "Vancouver Canucks": "VAN",
+    "Vegas Golden Knights": "VGK", "Washington Capitals": "WSH", "Winnipeg Jets": "WPG",
+}
+
+
+def fetch_pinnacle_lines(target_date):
+    """fetch game totals from Pinnacle's public API.
+    Pinnacle is the sharpest book — their lines are the market benchmark.
     returns {"AWAY@HOME": 6.0, ...}
     """
-    progress("  fetching oddsshark lines...")
+    progress("  fetching pinnacle lines...")
     lines = {}
+    try:
+        # step 1: get all NHL matchups
+        url = f"https://guest.api.arcadia.pinnacle.com/0.1/leagues/{PINNACLE_NHL_LEAGUE_ID}/matchups?brandId=0"
+        matchups = fetch_json(url, timeout=15)
 
-    # oddsshark URLs follow a pattern
-    team_slugs = {
-        "ANA": "anaheim", "BOS": "boston", "BUF": "buffalo", "CGY": "calgary",
-        "CAR": "carolina", "CHI": "chicago", "COL": "colorado", "CBJ": "columbus",
-        "DAL": "dallas", "DET": "detroit", "EDM": "edmonton", "FLA": "florida",
-        "LAK": "los-angeles", "MIN": "minnesota", "MTL": "montreal",
-        "NSH": "nashville", "NJD": "new-jersey", "NYI": "new-york-islanders",
-        "NYR": "new-york-rangers", "OTT": "ottawa", "PHI": "philadelphia",
-        "PIT": "pittsburgh", "SJS": "san-jose", "SEA": "seattle", "STL": "st-louis",
-        "TBL": "tampa-bay", "TOR": "toronto", "UTA": "utah", "VAN": "vancouver",
-        "VGK": "vegas", "WSH": "washington", "WPG": "winnipeg",
-    }
-
-    dt = datetime.strptime(target_date, "%Y-%m-%d")
-
-    # try multiple URL formats that oddsshark uses
-    def make_urls(away, home):
-        a_slug = team_slugs.get(away, away.lower())
-        h_slug = team_slugs.get(home, home.lower())
-        month = dt.strftime("%B").lower()
-        day = dt.day
-        year = dt.year
-        # oddsshark uses numeric IDs in URLs — we can't guess those
-        # instead try the odds listing page
-        return [
-            f"https://www.oddsshark.com/nhl/{a_slug}-{h_slug}-odds-{month}-{day}-{year}",
-            f"https://www.oddsshark.com/nhl/odds",
-        ]
-
-    def fetch_one_game(away, home):
-        for url in make_urls(away, home):
-            try:
-                html = fetch_url(url, timeout=15)
-                text = strip_html(html)
-                # look for total values near team names
-                a_slug = team_slugs.get(away, away.lower())
-                h_slug = team_slugs.get(home, home.lower())
-                # find total values: "5.5", "6.0", "6.5" in game context
-                totals = re.findall(r'(\d+\.5|\d+\.0)', text)
-                if totals:
-                    from collections import Counter
-                    counts = Counter(float(t) for t in totals if 4.5 <= float(t) <= 8.0)
-                    if counts:
-                        best = counts.most_common(1)[0][0]
-                        return (f"{away}@{home}", best)
-            except Exception:
+        # find today's games (some start after midnight UTC)
+        target_dt = datetime.strptime(target_date, "%Y-%m-%d")
+        next_day = (target_dt + timedelta(days=1)).strftime("%Y-%m-%d")
+        today_ids = []
+        for m in matchups:
+            if m.get("type") != "matchup":
                 continue
-        return None
+            start = m.get("startTime", "")
+            if target_date not in start and f"{next_day}T0" not in start:
+                continue
+            parts = m.get("participants", [])
+            home = away = None
+            for p in parts:
+                pname = p.get("name", "")
+                abbrev = PINNACLE_TEAM_MAP.get(pname)
+                if not abbrev:
+                    continue
+                if p.get("alignment") == "home":
+                    home = abbrev
+                elif p.get("alignment") == "away":
+                    away = abbrev
+            if away and home:
+                today_ids.append((m["id"], away, home))
 
-    with ThreadPoolExecutor(max_workers=5) as ex:
-        futs = [ex.submit(fetch_one_game, a, h) for a, h in games]
-        for f in as_completed(futs):
-            result = f.result()
-            if result:
-                lines[result[0]] = result[1]
+        # step 2: fetch odds for each game in parallel
+        def fetch_game_total(mid, away, home):
+            try:
+                url = f"https://guest.api.arcadia.pinnacle.com/0.1/matchups/{mid}/markets/related/straight"
+                markets = fetch_json(url, timeout=10)
+                for mkt in markets:
+                    if mkt.get("type") == "total" and mkt.get("period") == 0:
+                        for price in mkt.get("prices", []):
+                            if price.get("designation") == "over":
+                                return (f"{away}@{home}", price.get("points"))
+                        break
+            except Exception:
+                pass
+            return None
 
-    progress(f"  oddsshark: found {len(lines)} lines")
+        with ThreadPoolExecutor(max_workers=5) as ex:
+            futs = [ex.submit(fetch_game_total, mid, aw, hm) for mid, aw, hm in today_ids]
+            for f in as_completed(futs):
+                result = f.result()
+                if result and result[1] is not None:
+                    lines[result[0]] = float(result[1])
+
+        progress(f"  pinnacle: found {len(lines)} lines")
+
+    except Exception as e:
+        progress(f"  pinnacle failed: {e}")
+
     return lines
 
 
@@ -522,25 +538,31 @@ def merge_goalie_sources(dfo, nhl):
     return merged
 
 
-def reconcile_lines(espn_lines, oddsshark_lines):
-    """reconcile lines from multiple sources.
-    ESPN API returns clean JSON per-game totals — primary source.
-    OddsShark is a backup but noisy from HTML scraping.
-    ESPN sometimes shows 5.5/6.5 when the real line is 6.0 —
-    if ESPN shows X.5 and OddsShark disagrees with a .0 value, trust OddsShark.
-    """
-    final = dict(espn_lines)  # start with ESPN
+def reconcile_lines(espn_lines, pinnacle_lines):
+    """reconcile lines from ESPN API + Pinnacle API.
+    Pinnacle is the sharpest book in the market — when ESPN and Pinnacle
+    disagree, Pinnacle is almost always correct. ESPN is known to round
+    6.0 → 5.5 or 6.5.
 
-    # only override ESPN with OddsShark if OddsShark found game-specific data
-    for key, val in oddsshark_lines.items():
-        espn_val = final.get(key)
-        if espn_val is None:
-            final[key] = val
-        elif val != espn_val:
-            # if OddsShark says 6.0 and ESPN says 5.5 or 6.5, trust 6.0
-            # (ESPN's known rounding issue)
-            if val == 6.0 and espn_val in (5.5, 6.5):
-                final[key] = 6.0
+    priority: Pinnacle > ESPN > nothing.
+    """
+    all_keys = set(list(espn_lines.keys()) + list(pinnacle_lines.keys()))
+    final = {}
+
+    for key in all_keys:
+        e = espn_lines.get(key)
+        p = pinnacle_lines.get(key)
+
+        if p is not None and e is not None:
+            if p == e:
+                final[key] = p  # sources agree
+            else:
+                # sources disagree — trust Pinnacle (sharper line)
+                final[key] = p
+        elif p is not None:
+            final[key] = p  # Pinnacle only
+        elif e is not None:
+            final[key] = e  # ESPN only
 
     return final
 
@@ -598,13 +620,14 @@ def main():
         fut_dfo = ex.submit(fetch_dfo_goalies)
         fut_nhl = ex.submit(fetch_nhl_goalies)
         fut_espn = ex.submit(fetch_espn_lines, target_date)
+        fut_pinnacle = ex.submit(fetch_pinnacle_lines, target_date)
         fut_inj = ex.submit(fetch_injuries, teams_needed)
 
         dfo_goalies = fut_dfo.result()
         nhl_goalies = fut_nhl.result()
         espn_lines = fut_espn.result()
+        pinnacle_lines = fut_pinnacle.result()
         injuries = fut_inj.result()
-    odds_lines = {}  # oddsshark generic page scraping is unreliable — disabled
 
     # collect errors from failed sources
     if "_error" in dfo_goalies:
@@ -616,7 +639,7 @@ def main():
 
     # merge sources
     merged_goalies = merge_goalie_sources(dfo_goalies, nhl_goalies)
-    merged_lines = reconcile_lines(espn_lines, odds_lines)
+    merged_lines = reconcile_lines(espn_lines, pinnacle_lines)
 
     # build output in format ready for run_analysis.py
     goalies_for_engine = {}
@@ -632,26 +655,21 @@ def main():
     # line (43% of games) and 6.5 triggers a -1 penalty in the model, any game
     # ESPN shows as 6.5 COULD actually be 6.0 — which changes the pick decision.
     # the agent MUST verify these with an additional source before running the engine.
+    # flag disagreements between sources (informational — Pinnacle wins)
     lines_needing_verification = []
     for key, val in merged_lines.items():
         espn_val = espn_lines.get(key)
-        odds_val = odds_lines.get(key)
-        if espn_val is not None and odds_val is not None and espn_val != odds_val:
+        pin_val = pinnacle_lines.get(key)
+        if espn_val is not None and pin_val is not None and espn_val != pin_val:
             lines_needing_verification.append({
-                "game": key, "espn": espn_val, "oddsshark": odds_val,
-                "using": val, "reason": "sources disagree"
+                "game": key, "espn": espn_val, "pinnacle": pin_val,
+                "using": val, "reason": f"ESPN={espn_val} vs Pinnacle={pin_val} — using Pinnacle"
             })
-        elif espn_val == 6.5 and odds_val is None:
-            # ESPN says 6.5 but no second source to verify — could be 6.0
+        elif espn_val is not None and pin_val is None:
+            # only ESPN available — flag for awareness
             lines_needing_verification.append({
                 "game": key, "espn": espn_val,
-                "using": val, "reason": "ESPN 6.5 unverified — could be 6.0"
-            })
-        elif espn_val == 5.5 and odds_val is None:
-            # less critical but ESPN could be rounding down from 6.0
-            lines_needing_verification.append({
-                "game": key, "espn": espn_val,
-                "using": val, "reason": "ESPN 5.5 unverified — could be 6.0"
+                "using": val, "reason": "ESPN only — no Pinnacle confirmation"
             })
 
     output = {
@@ -667,7 +685,7 @@ def main():
             "dfo_goalies": len([k for k in dfo_goalies if k != "_error"]),
             "nhl_goalies": len([k for k in nhl_goalies if k != "_error"]),
             "espn_lines": len(espn_lines),
-            "odds_lines": len(odds_lines),
+            "pinnacle_lines": len(pinnacle_lines),
         },
     }
 
