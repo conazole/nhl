@@ -336,7 +336,12 @@ def main():
     yesterday = (datetime.strptime(target_date, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
 
     with open(args.engine_json, "r") as f:
-        data = json.loads(f.read().strip())
+        content = f.read().strip()
+    # engine output may have stderr lines before JSON — find the JSON start
+    idx = content.find('{"target_date"')
+    if idx > 0:
+        content = content[idx:]
+    data = json.loads(content)
 
     extras = json.loads(args.extras)
     postmortem_text = extras.get("postmortem", "")

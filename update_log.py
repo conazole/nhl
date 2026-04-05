@@ -2,11 +2,12 @@
 """add or replace entries in picks_log.jsonl for a given date.
 
 usage:
-    python3 update_log.py 2026-04-01 '[{"game":"stl @ lak","confidence":4,...}, ...]'
+    python3 update_log.py 2026-04-01 /tmp/engine_output.json
+    python3 update_log.py 2026-04-01 '[{"game":"stl @ lak","confidence":4,...}]'
 
-removes all existing entries for TARGET_DATE (re-runs replace, never
-duplicate). entries with a "result" field are never touched. appends
-new entries from the JSON argument.
+accepts either a file path (engine JSON with "matchups" array) or a raw
+JSON string. removes all existing entries for TARGET_DATE (re-runs replace,
+never duplicate). entries with a "result" field are never touched.
 
 each entry must have at minimum: game, confidence.
 the script adds: date, pick ("1p u2.5"), model ("v4" default).
@@ -44,14 +45,60 @@ def write_log(entries):
         raise
 
 
+def entries_from_engine(data):
+    """extract log entries from engine JSON output."""
+    entries = []
+    for m in data["matchups"]:
+        away = m["away"].lower()
+        home = m["home"].lower()
+        conf = m["confidence"]
+
+        entry = {
+            "game": f"{away} @ {home}",
+            "confidence": conf,
+            "total_line": m.get("total_line"),
+            "combined_recent5_pct": m.get("comb_r5_pct", 0),
+            "combined_last15_pct": m.get("comb_r15_pct", 0),
+            "poisson_pct": m.get("poisson_pct", 0),
+        }
+        if conf < 2:
+            entry["tier"] = "avoid"
+        elif conf < 4:
+            entry["tier"] = "honorable_mention"
+        entries.append(entry)
+    return entries
+
+
+def load_entries(arg):
+    """load entries from a file path or raw JSON string."""
+    # try as file path first
+    if os.path.isfile(arg):
+        with open(arg) as f:
+            content = f.read().strip()
+        # engine output may have stderr before JSON — find the JSON
+        for start_key in ['{"target_date"', '[{']:
+            idx = content.find(start_key)
+            if idx >= 0:
+                content = content[idx:]
+                break
+        data = json.loads(content)
+        # if it's engine output (has "matchups"), convert
+        if isinstance(data, dict) and "matchups" in data:
+            return entries_from_engine(data)
+        # otherwise treat as raw entries array
+        return data
+    # raw JSON string
+    return json.loads(arg)
+
+
 def main():
     parser = argparse.ArgumentParser(description="update picks_log.jsonl")
     parser.add_argument("target_date", help="YYYY-MM-DD")
-    parser.add_argument("entries_json", help="JSON array of new entries")
+    parser.add_argument("entries", help="engine JSON file path or JSON array string")
     args = parser.parse_args()
 
     target_date = args.target_date
-    new_entries = json.loads(args.entries_json)
+    new_entries = load_entries(args.entries)
 
     # load existing log
     entries = read_log()
