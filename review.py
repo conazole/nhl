@@ -350,6 +350,11 @@ def analyze(entries, last_days=None):
     return lines
 
 
+def to_emoji_bar(text):
+    """replace █/░ bar chars with colored emoji squares for github markdown."""
+    return text.replace("█", "🟩").replace("░", "🟥")
+
+
 def save_report(lines, last_days=None):
     """save github-friendly markdown version to review_{date}.md"""
     today = datetime.now().strftime("%Y-%m-%d")
@@ -360,7 +365,8 @@ def save_report(lines, last_days=None):
 
     # convert terminal output to proper markdown:
     # - section dividers (═══) become ## headers
-    # - data lines (with bars/tables) go into code blocks
+    # - lines with bars (█/░) stay outside code blocks, use emoji
+    # - pure data lines go into code blocks
     # - insight lines (✓/⚠) become bullet points
     md = []
     i = 0
@@ -383,40 +389,51 @@ def save_report(lines, last_days=None):
                 i += 3
                 # collect lines until next section or end
                 code_lines = []
-                insight_lines = []
                 while i < len(clean):
                     next_line = clean[i]
                     if next_line.strip().startswith("═" * 10):
                         break
                     stripped = next_line.strip()
                     if not stripped:
-                        # flush code block if we have one
                         if code_lines:
                             md.append("```")
                             md.extend(code_lines)
                             md.append("```")
                             md.append("")
                             code_lines = []
-                        if insight_lines:
-                            md.extend(insight_lines)
-                            md.append("")
-                            insight_lines = []
                         i += 1
                         continue
-                    # insights: lines starting with ✓ or ⚠ or "killed" or "v4."
-                    if stripped.startswith(("✓", "⚠", "killed", "v4.")):
+                    has_bar = "█" in stripped or "░" in stripped
+                    is_insight = stripped.startswith(("✓", "⚠", "killed", "v4."))
+                    # labels that precede bar lines shouldn't be in code blocks
+                    is_label = stripped.endswith(":") and len(stripped) < 30
+                    # header rows for confidence calibration table only
+                    is_header = ("conf" in stripped and "hit%" in stripped)
+                    if is_insight:
                         if code_lines:
                             md.append("```")
                             md.extend(code_lines)
                             md.append("```")
                             md.append("")
                             code_lines = []
-                        insight_lines.append(f"- {stripped}")
-                    else:
-                        if insight_lines:
-                            md.extend(insight_lines)
+                        md.append(f"- {stripped}")
+                    elif has_bar or is_header:
+                        if code_lines:
+                            md.append("```")
+                            md.extend(code_lines)
+                            md.append("```")
                             md.append("")
-                            insight_lines = []
+                            code_lines = []
+                        md.append(to_emoji_bar(stripped))
+                    elif is_label:
+                        if code_lines:
+                            md.append("```")
+                            md.extend(code_lines)
+                            md.append("```")
+                            md.append("")
+                            code_lines = []
+                        md.append(f"**{stripped}**")
+                    else:
                         code_lines.append(next_line.rstrip())
                     i += 1
                 # flush remaining
@@ -425,9 +442,7 @@ def save_report(lines, last_days=None):
                     md.extend(code_lines)
                     md.append("```")
                     md.append("")
-                if insight_lines:
-                    md.extend(insight_lines)
-                    md.append("")
+                md.append("")
                 continue
             i += 1
             continue
