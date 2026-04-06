@@ -59,7 +59,11 @@ def bar(w, total, width=20):
     if not total:
         return ""
     filled = round(width * w / total)
-    return "█" * filled + "░" * (width - filled)
+    empty = width - filled
+    green = "\033[92m"  # bright green
+    red = "\033[91m"    # bright red
+    reset = "\033[0m"
+    return f"{green}{'█' * filled}{reset}{red}{'░' * empty}{reset}"
 
 
 def analyze(entries):
