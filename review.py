@@ -350,108 +350,78 @@ def analyze(entries, last_days=None):
     return lines
 
 
-def to_emoji_bar(text):
-    """replace █/░ bar chars with colored emoji squares for github markdown."""
-    return text.replace("█", "🟩").replace("░", "🟥")
-
-
 def save_report(lines, last_days=None):
-    """save github-friendly markdown version to review_{date}.md"""
+    """save github-friendly markdown version to review_{date}.md.
+
+    simple approach: ## headers for sections, everything else in one big
+    code block per section (perfect alignment), insights as bullet points.
+    """
     today = datetime.now().strftime("%Y-%m-%d")
     filename = f"review_{today}.md"
     filepath = os.path.join(SCRIPT_DIR, filename)
 
     clean = [strip_ansi(line) for line in lines]
 
-    # convert terminal output to proper markdown:
-    # - section dividers (═══) become ## headers
-    # - lines with bars (█/░) stay outside code blocks, use emoji
-    # - pure data lines go into code blocks
-    # - insight lines (✓/⚠) become bullet points
     md = []
     i = 0
     while i < len(clean):
         line = clean[i]
+        stripped = line.strip()
 
-        # title line
+        # title
         if i == 0:
-            md.append(f"# {line.strip()}")
+            md.append(f"# {stripped}")
             md.append("")
             i += 1
             continue
 
-        # section divider: ═══ followed by title followed by ═══
-        if line.strip().startswith("═" * 10):
+        # section divider → ## header
+        if stripped.startswith("═" * 10):
             if i + 2 < len(clean) and clean[i + 2].strip().startswith("═" * 10):
                 title = clean[i + 1].strip()
                 md.append(f"## {title}")
                 md.append("")
                 i += 3
-                # collect lines until next section or end
-                code_lines = []
+
+                # collect section content
+                code_buf = []
                 while i < len(clean):
-                    next_line = clean[i]
-                    if next_line.strip().startswith("═" * 10):
+                    sl = clean[i].strip()
+                    if sl.startswith("═" * 10):
                         break
-                    stripped = next_line.strip()
-                    if not stripped:
-                        if code_lines:
-                            md.append("```")
-                            md.extend(code_lines)
-                            md.append("```")
-                            md.append("")
-                            code_lines = []
-                        i += 1
-                        continue
-                    has_bar = "█" in stripped or "░" in stripped
-                    is_insight = stripped.startswith(("✓", "⚠", "killed", "v4."))
-                    # labels that precede bar lines shouldn't be in code blocks
-                    is_label = stripped.endswith(":") and len(stripped) < 30
-                    # header rows for confidence calibration table only
-                    is_header = ("conf" in stripped and "hit%" in stripped)
+                    is_insight = sl.startswith(("✓", "⚠", "killed", "v4."))
                     if is_insight:
-                        if code_lines:
+                        if code_buf:
                             md.append("```")
-                            md.extend(code_lines)
-                            md.append("```")
-                            md.append("")
-                            code_lines = []
-                        md.append(f"- {stripped}")
-                    elif has_bar or is_header:
-                        if code_lines:
-                            md.append("```")
-                            md.extend(code_lines)
+                            md.extend(code_buf)
                             md.append("```")
                             md.append("")
-                            code_lines = []
-                        md.append(to_emoji_bar(stripped))
-                    elif is_label:
-                        if code_lines:
-                            md.append("```")
-                            md.extend(code_lines)
-                            md.append("```")
-                            md.append("")
-                            code_lines = []
-                        md.append(f"**{stripped}**")
+                            code_buf = []
+                        md.append(f"- {sl}")
+                    elif sl:
+                        code_buf.append(clean[i].rstrip())
                     else:
-                        code_lines.append(next_line.rstrip())
+                        if code_buf:
+                            md.append("```")
+                            md.extend(code_buf)
+                            md.append("```")
+                            md.append("")
+                            code_buf = []
                     i += 1
-                # flush remaining
-                if code_lines:
+
+                if code_buf:
                     md.append("```")
-                    md.extend(code_lines)
+                    md.extend(code_buf)
                     md.append("```")
-                    md.append("")
                 md.append("")
                 continue
             i += 1
             continue
 
-        # regular line outside sections
-        stripped = line.strip()
+        # regular lines (subtitle etc)
         if stripped:
             md.append(stripped)
-        md.append("")
+            md.append("")
         i += 1
 
     with open(filepath, "w") as f:
