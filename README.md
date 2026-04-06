@@ -2,15 +2,15 @@
 
 systematic model for betting nhl 1st period under 2.5 goals. data-driven, no gut feels. real money.
 
-## v4 model (active since mar 28, 2026)
+## v4.1 model (active since apr 6, 2026)
 
-validated on 1149 games (full 2025-26 season with pre-game lines). 4-factor confidence score on a /6 scale:
+v4 core validated on 1149 games. v4.1 splits backup penalty by partner type (275-game audit, apr 6). 4-factor confidence score on a /6 scale:
 
 | factor | criteria | points |
 | --- | --- | --- |
 | combined r5 u2.5% | <70%: 0, 70-79%: +1, ≥80%: +2 | 0-2 |
 | combined r15 u2.5% | <70%: 0, ≥70%: +1 | 0-1 |
-| goalie matchup type | starter+starter: +2, starter+tandem: +1, tandem+tandem: 0, any backup: -1 | -1 to +2 |
+| goalie matchup type | starter+starter: +2, starter+tandem OR backup+starter: +1, tandem+tandem: 0, backup+tandem: -1, backup+backup: -1 | -1 to +2 |
 | total line | ≤5.5: +1, ≤6.0: 0, ≥6.5: -1 | -1 to +1 |
 
 - **pick threshold: ≥4/6.** honorable mention: 2-3. avoid: <2.
@@ -19,13 +19,17 @@ validated on 1149 games (full 2025-26 season with pre-game lines). 4-factor conf
 - always a 2-leg parlay (top 2 picks by confidence, tiebreak by r5%). if <2 games qualify, no bet.
 - line sourcing: ESPN API + Pinnacle API. take consensus, trust Pinnacle for 6.0 lines (ESPN rounds to 5.5/6.5).
 
-### backtest results (1149 games)
+### backtest results (1149 games + 275-game audit)
 
 - **parlays: 64.8%** (+6.3pp over v3)
 - **legs: 80.5%** (+3.4pp over v3)
 - perfectly monotonic confidence gradient
 - line factor validation: 5.5 line = 78.7%, 6.0 = 76.4%, 6.5 = 72.6%
-- goalie matchup: starter+starter 81.0%, starter+tandem 76.2%, tandem+tandem 71.6%, any backup 66-69%
+- goalie matchup: starter+starter 81.0%, starter+tandem 75.8%, **backup+starter 77.4%**, tandem+tandem 72.7%, backup+tandem 62.0%, backup+backup 56.0%
+
+### v4.1 change: backup+starter split (apr 6, 2026)
+
+275-game audit found backup+starter hits u2.5 at 77.4% — same as starter+tandem (75.8%). the old flat -1 for "any backup" was averaging this with backup+tandem (62.0%). the starter anchors the game regardless of the other goalie's starts share. backup save percentage showed no signal — partner type is the predictor.
 
 ### killed factors (not in scoring)
 
@@ -90,4 +94,5 @@ outputs: confidence calibration, tier accuracy, line factor impact, 1p total dis
 - **v1** (feb 2026): 8-factor /10 scale. killed — no predictive power.
 - **v2** (mar 2026): goalie classification used 15-game window, elite list hardcoded, r5≥90% overvalued. killed — picks underperformed avoids.
 - **v3** (mar 24, 2026): 3 factors, /5 scale. validated on 892 games. clean gradient but missing line factor — 6.5-line picks hit only 58.3% vs 78.6% on 5.5.
-- **v4** (mar 28, 2026): v3 core + total line factor. 4 factors, /6 scale. validated on 1149 games. 64.8% parlays, 80.5% legs. active.
+- **v4** (mar 28, 2026): v3 core + total line factor. 4 factors, /6 scale. validated on 1149 games. 64.8% parlays, 80.5% legs.
+- **v4.1** (apr 6, 2026): split backup penalty by partner type. backup+starter → +1 (was -1). 275-game audit: 77.4% u2.5 = same as starter+tandem. active.
