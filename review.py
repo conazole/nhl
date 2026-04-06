@@ -1,19 +1,29 @@
 #!/usr/bin/env python3
-"""weekly review — find patterns the daily postmortem can't see.
+"""nhl 1p u2.5 model review — find patterns the daily postmortem can't see.
 
-reads picks_log.jsonl, analyzes all resolved v4 entries, and prints
-a synthesis of systematic blind spots and model calibration.
+reads picks_log.jsonl, analyzes all resolved v4 entries, prints colored
+output to terminal, and saves a clean markdown report to review_{date}.md.
 
 usage:
     python3 review.py              # all v4 data
     python3 review.py --last 14    # last 14 days only
 """
 
-import json, argparse, sys
+import json, argparse, os, re
 from collections import defaultdict, Counter
 from datetime import datetime, timedelta
 
-LOG_PATH = "/Users/raz/claude/nhl/picks_log.jsonl"
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+LOG_PATH = os.path.join(SCRIPT_DIR, "picks_log.jsonl")
+
+# ── ansi colors (terminal only) ──
+GREEN = "\033[92m"
+RED = "\033[91m"
+YELLOW = "\033[93m"
+CYAN = "\033[96m"
+BOLD = "\033[1m"
+DIM = "\033[2m"
+RESET = "\033[0m"
 
 
 def load_resolved(model="v4", last_days=None):
@@ -45,12 +55,6 @@ def tier_of(e):
     return "pick"
 
 
-def print_section(title):
-    print(f"\n{'═' * 44}")
-    print(f"  {title}")
-    print(f"{'═' * 44}")
-
-
 def pct(w, total):
     return f"{100 * w / total:.1f}%" if total else "n/a"
 
@@ -60,154 +64,188 @@ def bar(w, total, width=20):
         return ""
     filled = round(width * w / total)
     empty = width - filled
-    green = "\033[92m"  # bright green
-    red = "\033[91m"    # bright red
-    reset = "\033[0m"
-    return f"{green}{'█' * filled}{reset}{red}{'░' * empty}{reset}"
+    return f"{GREEN}{'█' * filled}{RESET}{RED}{'░' * empty}{RESET}"
 
 
-def analyze(entries):
+def bar_plain(w, total, width=20):
+    if not total:
+        return ""
+    filled = round(width * w / total)
+    empty = width - filled
+    return "█" * filled + "░" * empty
+
+
+def strip_ansi(text):
+    return re.sub(r'\033\[[0-9;]*m', '', text)
+
+
+def analyze(entries, last_days=None):
     if not entries:
-        print("no resolved v4 entries found.")
-        return
+        return ["no resolved v4 entries found."]
+
+    lines = []  # collect all output lines
+
+    def out(text=""):
+        lines.append(text)
+
+    def section(title):
+        out(f"\n{'═' * 50}")
+        out(f"  {BOLD}{title}{RESET}")
+        out(f"{'═' * 50}")
 
     dates = sorted(set(e["date"] for e in entries))
-    print(f"v4 review — {len(entries)} games over {len(dates)} days")
-    print(f"({dates[0]} to {dates[-1]})")
+    scope = f"last {last_days} days" if last_days else "all time"
+    out(f"{BOLD}nhl 1p u2.5 — model review{RESET}")
+    out(f"{len(entries)} games · {len(dates)} days · {dates[0]} to {dates[-1]} · {scope}")
 
-    # ── confidence calibration ──────────────────────
-    print_section("confidence calibration")
-    by_conf = defaultdict(lambda: {"w": 0, "l": 0})
-    for e in entries:
-        c = e["confidence"]
-        by_conf[c]["w" if e["result"] == "win" else "l"] += 1
+    # ── record summary ─────────────────────────────
+    section("record")
 
-    print(f"  {'conf':>4}  {'w':>3}  {'l':>3}  {'total':>5}  {'hit%':>6}  ")
-    print(f"  {'─' * 4}  {'─' * 3}  {'─' * 3}  {'─' * 5}  {'─' * 6}  {'─' * 20}")
-    for c in sorted(by_conf.keys(), reverse=True):
-        d = by_conf[c]
-        t = d["w"] + d["l"]
-        print(f"  {c:>4}  {d['w']:>3}  {d['l']:>3}  {t:>5}  {pct(d['w'], t):>6}  {bar(d['w'], t)}")
+    picks = [e for e in entries if tier_of(e) == "pick"]
+    hm = [e for e in entries if tier_of(e) == "hm"]
+    avoids = [e for e in entries if tier_of(e) == "avoid"]
 
-    # ── tier accuracy ───────────────────────────────
-    print_section("tier accuracy")
-    by_tier = defaultdict(lambda: {"w": 0, "l": 0})
-    for e in entries:
-        by_tier[tier_of(e)]["w" if e["result"] == "win" else "l"] += 1
-
-    for tier in ["pick", "hm", "avoid"]:
-        d = by_tier[tier]
-        t = d["w"] + d["l"]
-        if t:
-            print(f"  {tier:<6} {d['w']:>3}w {d['l']:>3}l  ({pct(d['w'], t):>6})  {bar(d['w'], t)}")
-
-    # ── parlay tracking ─────────────────────────────
-    print_section("parlay results by day")
+    # parlay calc
     days = defaultdict(list)
-    for e in entries:
-        if tier_of(e) == "pick":
-            days[e["date"]].append(e["result"] == "win")
+    for e in picks:
+        days[e["date"]].append(e["result"] == "win")
+    parlay_w = sum(1 for legs in days.values() if all(legs))
+    parlay_l = sum(1 for legs in days.values() if not all(legs))
+    leg_w = sum(1 for e in picks if e["result"] == "win")
+    leg_l = sum(1 for e in picks if e["result"] == "loss")
 
-    parlay_w, parlay_l = 0, 0
-    streak, max_streak = 0, 0
-    current_streak_type = None
+    # streak
+    streak, max_streak, current_type = 0, 0, None
     for d in sorted(days.keys()):
-        legs = days[d]
-        won = all(legs)
-        if won:
-            parlay_w += 1
-        else:
-            parlay_l += 1
-        # streak tracking
-        if current_streak_type == won:
+        won = all(days[d])
+        if current_type == won:
             streak += 1
         else:
-            streak = 1
-            current_streak_type = won
+            streak, current_type = 1, won
         if won:
             max_streak = max(max_streak, streak)
 
-    if parlay_w + parlay_l:
-        print(f"  parlays: {parlay_w}-{parlay_l} ({pct(parlay_w, parlay_w + parlay_l)})")
-        print(f"  best win streak: {max_streak}")
+    out(f"  parlays: {BOLD}{parlay_w}-{parlay_l}{RESET} ({pct(parlay_w, parlay_w + parlay_l)}) · best streak: {max_streak}")
+    out(f"  legs:    {BOLD}{leg_w}-{leg_l}{RESET} ({pct(leg_w, leg_w + leg_l)})")
 
-    # ── line factor impact ──────────────────────────
-    print_section("line factor impact")
+    high = [e for e in entries if e["confidence"] >= 5]
+    if high:
+        hw = sum(1 for e in high if e["result"] == "win")
+        out(f"  5+/6:   {BOLD}{hw}-{len(high)-hw}{RESET} ({pct(hw, len(high))})")
+
+    # ── confidence calibration ─────────────────────
+    section("confidence calibration")
+    by_conf = defaultdict(lambda: {"w": 0, "l": 0})
+    for e in entries:
+        by_conf[e["confidence"]]["w" if e["result"] == "win" else "l"] += 1
+
+    out(f"  {'conf':>4}  {'w':>3}  {'l':>3}  {'total':>5}  {'hit%':>6}")
+    out(f"  {'─' * 4}  {'─' * 3}  {'─' * 3}  {'─' * 5}  {'─' * 6}  {'─' * 20}")
+    for c in sorted(by_conf.keys(), reverse=True):
+        d = by_conf[c]
+        t = d["w"] + d["l"]
+        rate = 100 * d["w"] / t if t else 0
+        color = GREEN if rate >= 75 else (YELLOW if rate >= 60 else RED)
+        out(f"  {c:>4}  {d['w']:>3}  {d['l']:>3}  {t:>5}  {color}{pct(d['w'], t):>6}{RESET}  {bar(d['w'], t)}")
+
+    # interpretation
+    conf4 = by_conf.get(4, {"w": 0, "l": 0})
+    conf4_t = conf4["w"] + conf4["l"]
+    if conf4_t >= 5:
+        conf4_r = 100 * conf4["w"] / conf4_t
+        if conf4_r < 65:
+            out(f"\n  {YELLOW}⚠ 4/6 threshold tier at {conf4_r:.0f}% — weakest pick tier. monitor with v4.1 changes.{RESET}")
+        else:
+            out(f"\n  {GREEN}✓ 4/6 threshold tier at {conf4_r:.0f}% — holding well.{RESET}")
+
+    # ── tier accuracy ──────────────────────────────
+    section("tier accuracy")
+    for tier_name, tier_entries in [("pick", picks), ("hm", hm), ("avoid", avoids)]:
+        w = sum(1 for e in tier_entries if e["result"] == "win")
+        t = len(tier_entries)
+        if t:
+            out(f"  {tier_name:<6} {w:>3}w {t-w:>3}l  ({pct(w, t):>6})  {bar(w, t)}")
+
+    # picks vs hm comparison
+    if picks and hm:
+        pk_r = 100 * sum(1 for e in picks if e["result"] == "win") / len(picks)
+        hm_r = 100 * sum(1 for e in hm if e["result"] == "win") / len(hm)
+        if hm_r > pk_r:
+            out(f"\n  {YELLOW}⚠ HMs ({hm_r:.0f}%) outperforming picks ({pk_r:.0f}%) — threshold may be too strict{RESET}")
+        else:
+            out(f"\n  {GREEN}✓ picks ({pk_r:.0f}%) > HMs ({hm_r:.0f}%) — threshold calibrated well{RESET}")
+
+    # ── line factor ────────────────────────────────
+    section("line factor")
     by_line = defaultdict(lambda: {"w": 0, "l": 0})
     for e in entries:
         line = e.get("total_line")
         if line is None:
             continue
-        # bucket: 5.5, 6.0, 6.5
-        if line <= 5.5:
-            k = "≤5.5"
-        elif line <= 6.0:
-            k = "6.0"
-        else:
-            k = "≥6.5"
+        k = "≤5.5" if line <= 5.5 else ("6.0" if line <= 6.0 else "≥6.5")
         by_line[k]["w" if e["result"] == "win" else "l"] += 1
 
+    out(f"  {'all games:'}")
     for k in ["≤5.5", "6.0", "≥6.5"]:
         d = by_line.get(k, {"w": 0, "l": 0})
         t = d["w"] + d["l"]
         if t:
-            print(f"  {k:<5}  {d['w']:>3}w {d['l']:>3}l  ({pct(d['w'], t):>6})  {bar(d['w'], t)}")
+            out(f"  {k:<5}  {d['w']:>3}w {d['l']:>3}l  ({pct(d['w'], t):>6})  {bar(d['w'], t)}")
 
-    # picks-only line analysis
     pick_by_line = defaultdict(lambda: {"w": 0, "l": 0})
-    for e in entries:
-        if tier_of(e) != "pick":
-            continue
+    for e in picks:
         line = e.get("total_line")
         if line is None:
             continue
-        if line <= 5.5:
-            k = "≤5.5"
-        elif line <= 6.0:
-            k = "6.0"
-        else:
-            k = "≥6.5"
+        k = "≤5.5" if line <= 5.5 else ("6.0" if line <= 6.0 else "≥6.5")
         pick_by_line[k]["w" if e["result"] == "win" else "l"] += 1
 
     if pick_by_line:
-        print(f"\n  picks only:")
+        out(f"\n  {'picks only:'}")
         for k in ["≤5.5", "6.0", "≥6.5"]:
             d = pick_by_line.get(k, {"w": 0, "l": 0})
             t = d["w"] + d["l"]
             if t:
-                print(f"  {k:<5}  {d['w']:>3}w {d['l']:>3}l  ({pct(d['w'], t):>6})")
+                out(f"  {k:<5}  {d['w']:>3}w {d['l']:>3}l  ({pct(d['w'], t):>6})")
 
-    # ── margin analysis ─────────────────────────────
-    print_section("1p total distribution")
+    # 6.5 gate check
+    l65 = by_line.get("≥6.5", {"w": 0, "l": 0})
+    l65_t = l65["w"] + l65["l"]
+    if l65_t:
+        l65_r = 100 * l65["w"] / l65_t
+        sym = GREEN + "✓" if l65_r < 75 else YELLOW + "⚠"
+        out(f"\n  {sym} 6.5 gate: {l65_r:.0f}% u2.5 — {'holding' if l65_r < 75 else 'may need revisit'}{RESET}")
+
+    # ── loss profile ───────────────────────────────
+    section("loss profile")
     totals_w = Counter()
     totals_l = Counter()
     for e in entries:
         t = e.get("actual_1p_total")
         if t is None:
             continue
-        if e["result"] == "win":
-            totals_w[t] += 1
-        else:
-            totals_l[t] += 1
+        (totals_w if e["result"] == "win" else totals_l)[t] += 1
 
     all_totals = sorted(set(list(totals_w.keys()) + list(totals_l.keys())))
-    print(f"  {'1p':>3}  {'wins':>5}  {'losses':>6}")
-    print(f"  {'─' * 3}  {'─' * 5}  {'─' * 6}")
+    out(f"  {'1p':>3}  {'wins':>5}  {'losses':>6}")
+    out(f"  {'─' * 3}  {'─' * 5}  {'─' * 6}")
     for t in all_totals:
         w = totals_w.get(t, 0)
         l = totals_l.get(t, 0)
-        marker = " ← under" if t <= 2 else " ← OVER"
-        print(f"  {t:>3}  {w:>5}  {l:>6}{marker}")
+        marker = f" {DIM}← under{RESET}" if t <= 2 else f" {RED}← OVER{RESET}"
+        out(f"  {t:>3}  {w:>5}  {l:>6}{marker}")
 
-    # losses by margin (how badly do we miss?)
     losses = [e for e in entries if e["result"] == "loss" and e.get("actual_1p_total")]
     if losses:
         barely = sum(1 for e in losses if e["actual_1p_total"] == 3)
         blowout = sum(1 for e in losses if e["actual_1p_total"] >= 4)
-        print(f"\n  losses: {barely} barely over (3 goals), {blowout} blowout (4+)")
+        barely_pct = 100 * barely / len(losses)
+        out(f"\n  {barely} barely over (3 goals, {barely_pct:.0f}%) · {blowout} blowout (4+, {100-barely_pct:.0f}%)")
+        if barely_pct < 50:
+            out(f"  {YELLOW}⚠ majority of losses are blowouts — model missing high-scoring signals{RESET}")
 
-    # ── day-of-week ─────────────────────────────────
-    print_section("day of week")
+    # ── day of week ────────────────────────────────
+    section("day of week")
     by_dow = defaultdict(lambda: {"w": 0, "l": 0})
     dow_names = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
     for e in entries:
@@ -218,10 +256,12 @@ def analyze(entries):
         d = by_dow.get(i, {"w": 0, "l": 0})
         t = d["w"] + d["l"]
         if t:
-            print(f"  {name}  {d['w']:>3}w {d['l']:>3}l  ({pct(d['w'], t):>6})  {bar(d['w'], t, 15)}")
+            rate = 100 * d["w"] / t
+            color = GREEN if rate >= 70 else (YELLOW if rate >= 55 else RED)
+            out(f"  {name}  {d['w']:>3}w {d['l']:>3}l  ({color}{pct(d['w'], t):>6}{RESET})  {bar(d['w'], t, 15)}")
 
-    # ── team frequency in losses ────────────────────
-    print_section("teams in losses (picks + hm)")
+    # ── repeat offenders ───────────────────────────
+    section("repeat offenders")
     team_losses = Counter()
     team_total = Counter()
     for e in entries:
@@ -237,21 +277,20 @@ def analyze(entries):
             team_losses[away] += 1
             team_losses[home] += 1
 
-    # show teams with 2+ losses in picks/hm
-    repeat_offenders = [(t, team_losses[t], team_total[t])
-                        for t in team_losses if team_losses[t] >= 2]
-    repeat_offenders.sort(key=lambda x: -x[1])
-    if repeat_offenders:
-        for t, l, tot in repeat_offenders:
-            print(f"  {t:<5} {l} losses in {tot} appearances ({pct(tot - l, tot)} hit)")
+    repeat = [(t, team_losses[t], team_total[t])
+              for t in team_losses if team_losses[t] >= 2]
+    repeat.sort(key=lambda x: -x[1])
+    if repeat:
+        for t, l, tot in repeat:
+            hit = pct(tot - l, tot)
+            color = RED if (tot - l) / tot < 0.4 else YELLOW
+            out(f"  {color}{t:<5}{RESET} {l} losses in {tot} games ({hit} hit)")
     else:
-        print("  no repeat offenders (2+ losses)")
+        out(f"  {GREEN}no repeat offenders (2+ losses){RESET}")
 
-    # ── weekly trend ────────────────────────────────
-    print_section("weekly trend (picks only)")
-    picks = [e for e in entries if tier_of(e) == "pick"]
+    # ── weekly trend ───────────────────────────────
+    section("trend (picks only)")
     if picks:
-        # group by week
         by_week = defaultdict(lambda: {"w": 0, "l": 0})
         for e in picks:
             dt = datetime.strptime(e["date"], "%Y-%m-%d")
@@ -261,72 +300,90 @@ def analyze(entries):
         for wk in sorted(by_week.keys()):
             d = by_week[wk]
             t = d["w"] + d["l"]
-            print(f"  wk {wk}  {d['w']:>2}w {d['l']:>2}l  ({pct(d['w'], t):>6})  {bar(d['w'], t, 12)}")
+            out(f"  wk {wk}  {d['w']:>2}w {d['l']:>2}l  ({pct(d['w'], t):>6})  {bar(d['w'], t, 12)}")
 
-    # ── synthesis ───────────────────────────────────
-    print_section("synthesis — blind spots & edges")
+    # ── synthesis ──────────────────────────────────
+    section("what we've learned")
 
     findings = []
 
-    # check if high-confidence still holds
-    high = [e for e in entries if e["confidence"] >= 5]
+    # high confidence
     if high:
         hw = sum(1 for e in high if e["result"] == "win")
-        hr = hw / len(high) * 100
+        hr = 100 * hw / len(high)
         if hr >= 85:
-            findings.append(f"✓ 5+/6 confidence is elite: {hw}/{len(high)} ({hr:.0f}%)")
-        elif hr < 75:
-            findings.append(f"⚠ 5+/6 confidence dropping: {hw}/{len(high)} ({hr:.0f}%) — investigate")
+            findings.append(f"{GREEN}✓{RESET} 5+/6 is elite: {hw}/{len(high)} ({hr:.0f}%). high-confidence picks are the money maker.")
+        elif hr >= 75:
+            findings.append(f"{GREEN}✓{RESET} 5+/6 is solid: {hw}/{len(high)} ({hr:.0f}%). holding up well.")
+        else:
+            findings.append(f"{RED}⚠{RESET} 5+/6 dropping: {hw}/{len(high)} ({hr:.0f}%). investigate what changed.")
 
-    # check avoid accuracy
-    avoids = [e for e in entries if tier_of(e) == "avoid"]
+    # picks vs base rate
+    base_entries = [e for e in entries if e.get("actual_1p_total") is not None]
+    if base_entries:
+        base_u25 = sum(1 for e in base_entries if e["actual_1p_total"] < 3)
+        base_r = 100 * base_u25 / len(base_entries)
+        if picks:
+            pk_r = 100 * sum(1 for e in picks if e["result"] == "win") / len(picks)
+            edge = pk_r - base_r
+            findings.append(f"{'✓' if edge > 5 else '⚠'} pick edge over base rate: {pk_r:.0f}% vs {base_r:.0f}% ({'+' if edge > 0 else ''}{edge:.1f}pp)")
+
+    # avoids
     if avoids:
         av_w = sum(1 for e in avoids if e["result"] == "win")
-        av_r = av_w / len(avoids) * 100
-        if av_r < 65:
-            findings.append(f"✓ avoids are correctly bad bets: {av_r:.0f}% u2.5 rate")
+        av_r = 100 * av_w / len(avoids)
+        if av_r >= 75:
+            findings.append(f"{YELLOW}⚠{RESET} avoids hit at {av_r:.0f}% — looks conservative, but that's the base rate. the model's edge is in picks, not avoids.")
         else:
-            findings.append(f"⚠ avoids hitting at {av_r:.0f}% — model may be too conservative")
+            findings.append(f"{GREEN}✓{RESET} avoids at {av_r:.0f}% — correctly filtering weaker games.")
 
-    # check 6.5 line gate
-    line65 = [e for e in entries if e.get("total_line") and e["total_line"] >= 6.5]
-    if line65:
-        l65w = sum(1 for e in line65 if e["result"] == "win")
-        l65r = l65w / len(line65) * 100
-        findings.append(f"{'✓' if l65r < 75 else '⚠'} 6.5 line: {l65r:.0f}% u2.5 ({l65w}/{len(line65)}) — gate {'holding' if l65r < 75 else 'may need revisit'}")
+    # the kill list: factors we've removed and why
+    findings.append(f"{DIM}killed factors: poisson, elite bonus, b2b, penalties, system profile, context, early start — all noise on 1149 games{RESET}")
 
-    # check barely-over rate
-    if losses:
-        barely_pct = barely / len(losses) * 100
-        if barely_pct > 60:
-            findings.append(f"⚠ {barely_pct:.0f}% of losses are barely over (3 goals) — edge cases, not model failures")
-        else:
-            findings.append(f"⚠ {100 - barely_pct:.0f}% of losses are blowouts (4+) — model missing high-scoring signals")
+    # model evolution note
+    findings.append(f"{DIM}v4.1 (apr 6): backup+starter split from backup+tandem. 77.4% vs 62.0% — the starter anchors the game.{RESET}")
 
-    # check if hm > pick rate (model too conservative?)
-    hm = [e for e in entries if tier_of(e) == "hm"]
-    pk = [e for e in entries if tier_of(e) == "pick"]
-    if hm and pk:
-        hm_r = sum(1 for e in hm if e["result"] == "win") / len(hm) * 100
-        pk_r = sum(1 for e in pk if e["result"] == "win") / len(pk) * 100
-        if hm_r > pk_r:
-            findings.append(f"⚠ HMs hitting better than picks ({hm_r:.0f}% vs {pk_r:.0f}%) — threshold may be too high")
-        else:
-            findings.append(f"✓ picks > HMs ({pk_r:.0f}% vs {hm_r:.0f}%) — threshold calibrated well")
+    for f in findings:
+        out(f"  {f}")
 
-    if findings:
-        for f in findings:
-            print(f"  {f}")
-    else:
-        print("  not enough data for synthesis yet.")
+    out()
+    return lines
 
-    print()
+
+def save_report(lines, last_days=None):
+    """save clean markdown version (no ansi) to review_{date}.md"""
+    today = datetime.now().strftime("%Y-%m-%d")
+    filename = f"review_{today}.md"
+    filepath = os.path.join(SCRIPT_DIR, filename)
+
+    # strip ansi codes for markdown
+    clean = [strip_ansi(line) for line in lines]
+    content = "# " + clean[0] + "\n\n" + "\n".join(clean[1:])
+
+    # wrap tables/bars in code blocks for monospace
+    content = content.replace("═" * 50, "━" * 50)
+
+    with open(filepath, "w") as f:
+        f.write(content)
+
+    return filepath
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--last", type=int, help="only look at last N days")
     parser.add_argument("--model", default="v4", help="model version (default: v4)")
+    parser.add_argument("--no-save", action="store_true", help="skip saving report file")
     args = parser.parse_args()
+
     entries = load_resolved(model=args.model, last_days=args.last)
-    analyze(entries)
+    lines = analyze(entries, last_days=args.last)
+
+    # print colored to terminal
+    for line in lines:
+        print(line)
+
+    # save clean report
+    if not args.no_save and lines:
+        path = save_report(lines, last_days=args.last)
+        print(f"{DIM}saved → {path}{RESET}")
