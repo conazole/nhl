@@ -782,23 +782,23 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
         else:                    f_r15 = 0
 
         # factor 3: goalie matchup type (-1 to +2)
-        # 892-game backtest: starter vs starter = 81.0% (+6.4pp) on 247 games.
-        # any backup = 66-69%. elite bonus = noise (75.0%, +0.4pp).
-        # matchup TYPE is the signal, not individual quality.
-        # ONLY scores when both goalies confirmed. unconfirmed = 0.
+        # v4.1: split backup by partner type (275-game audit, apr 2026).
+        # backup+starter = 77.4% (53g) ≈ starter+tandem — starter anchors the game.
+        # backup+tandem = 62.0% (50g), backup+backup = 56.0% (25g) — both ends leak.
         pair = tuple(sorted([aw_cls, hm_cls]))
 
         if pair == ("starter", "starter"):
             f_goalie_projected = 2    # 81.0% on 247 games
-        elif pair in (("starter", "tandem"),):
-            f_goalie_projected = 1    # 76.2% on 290 games
+        elif pair in (("starter", "tandem"), ("backup", "starter")):
+            f_goalie_projected = 1    # 76-77% — starter anchors both matchup types
         elif pair == ("tandem", "tandem"):
             f_goalie_projected = 0    # 71.6% on 74 games
+        elif pair == ("backup", "tandem"):
+            f_goalie_projected = -1   # 62.0% on 50 games
         elif pair == ("backup", "backup"):
-            f_goalie_projected = -1   # 69.0% on 29 games
+            f_goalie_projected = -1   # 56.0% on 25 games
         else:
-            # any single backup involved (backup+starter or backup+tandem)
-            f_goalie_projected = -1   # 66-69% on 252 games
+            f_goalie_projected = -1   # fallback
         f_goalie = f_goalie_projected  # always score — confirmed flag is informational only
 
         # factor 4: total line (-1 to +1) — v4, validated on 1149 games.
