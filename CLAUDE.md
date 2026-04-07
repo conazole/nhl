@@ -88,6 +88,10 @@ v4 core validated on 1149 games (full 2025-26 season with pre-game lines). v4.1 
 - use prefetch pipeline (prefetch.py + resolve_results.py + format_output.py + update_log.py).
 - no shortcuts — every model factor must use the correct data scope, not whatever's convenient.
 
+## change documentation
+
+notable changes (model updates, architecture changes, new rules, killed factors, pipeline changes) must be documented in README.md with a date and brief description.
+
 ## what NOT to do
 
 - never WebFetch dailyfaceoff, nhl.com, ESPN odds, pinnacle, covers — prefetch.py handles all of this.

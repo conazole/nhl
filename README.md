@@ -89,6 +89,11 @@ outputs: confidence calibration, tier accuracy, line factor impact, 1p total dis
 - **applescript** — email delivery via macOS Mail (2 emails: picks summary + mobile analysis).
 - **claude code** — orchestration via `/nhl` skill. crontab runs daily at 1:03 PM CT.
 
+## changelog
+
+- **apr 7, 2026**: architecture — CLAUDE.md is now single source of truth for all rules. skill file (`/nhl`) references CLAUDE.md instead of duplicating rules. MEMORY.md slimmed to feedback/project index only. eliminates duplication and drift.
+- **apr 6, 2026**: v4.1 — backup+starter split from backup+tandem (+1 instead of -1). 275-game audit.
+
 ## model history
 
 - **v1** (feb 2026): 8-factor /10 scale. killed — no predictive power.
