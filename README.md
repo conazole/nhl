@@ -66,18 +66,52 @@ python3 review.py --last 14    # last 2 weeks only
 
 outputs: confidence calibration, tier accuracy, line factor impact, 1p total distribution, day-of-week splits, team frequency in losses, weekly trend, and a synthesis of systematic blind spots.
 
-## key files
+## repo files
+
+### pipeline scripts
 
 | file | purpose |
 | --- | --- |
-| `run_analysis.py` | analysis engine — data collection, 15-game walks, boxscores, xG, v4 scoring |
+| `run_analysis.py` | analysis engine — walks 15 games/team, fetches boxscores + xG, computes v4 confidence, fetches standings (mar-jun) |
 | `prefetch.py` | parallel fetcher for goalies (dailyfaceoff, nhl.com) and lines (ESPN, Pinnacle) |
-| `resolve_results.py` | resolves yesterday's unresolved picks against actual scores |
-| `format_output.py` | transforms engine JSON into styled markdown analysis file |
+| `resolve_results.py` | resolves yesterday's unresolved picks against actual 1p scores, updates season record |
+| `format_output.py` | transforms engine JSON into styled markdown analysis (box-drawing, emojis, fixed-width tables) |
 | `update_log.py` | manages picks_log.jsonl — adds/replaces entries, preserves resolved results |
 | `review.py` | weekly pattern analysis — confidence calibration, blind spots, synthesis |
-| `picks_log.jsonl` | full pick history with results, tiers, lines, goalies |
-| `analysis_{date}.md` | daily analysis file with 15-game tables, metrics, confidence breakdowns |
+
+### data files
+
+| file | purpose |
+| --- | --- |
+| `picks_log.jsonl` | full pick history — every game scored, with results, tiers, lines, goalies, model version |
+| `analysis_{date}.md` | daily analysis file with 15-game tables, all metrics, confidence breakdowns. previous day's file deleted each run |
+| `review_{date}.md` | weekly review output — pattern analysis, blind spots, synthesis |
+
+### config + rules
+
+| file | purpose |
+| --- | --- |
+| `CLAUDE.md` | single source of truth — all rules, confidence formula, parlay discipline, output/email format, execution pipeline |
+| `README.md` | project overview, model docs, file index, changelog |
+| `.claude/commands/nhl.md` | `/nhl` skill file — points to CLAUDE.md, triggers the pipeline |
+| `.claude/settings.local.json` | local claude code settings |
+
+### memory (claude code context across conversations)
+
+| file | purpose |
+| --- | --- |
+| `.claude/memory/MEMORY.md` | memory index — loaded into every conversation |
+| `.claude/memory/feedback_*.md` | user corrections and confirmed approaches (17 files) |
+| `.claude/memory/project_*.md` | project decisions and their rationale |
+| `.claude/memory/user_*.md` | user profile and preferences |
+
+### setup on a new machine
+
+```bash
+git clone <repo-url> && cd nhl
+# symlink memory so claude code finds it
+ln -s "$(pwd)/.claude/memory" ~/.claude/projects/-Users-raz-Library-Mobile-Documents-com-apple-CloudDocs-claude-nhl/memory
+```
 
 ## stack
 
