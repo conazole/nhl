@@ -91,6 +91,7 @@ outputs: confidence calibration, tier accuracy, line factor impact, 1p total dis
 
 ## changelog
 
+- **apr 9, 2026**: pipeline — added playoff context (standings) as informational display alongside b2b. shows pts/remaining/status (clinched/fighting/eliminated) per team. gated to mar-jun only. not in confidence scoring.
 - **apr 7, 2026**: architecture — CLAUDE.md is now single source of truth for all rules. skill file (`/nhl`) references CLAUDE.md instead of duplicating rules. MEMORY.md slimmed to feedback/project index only. eliminates duplication and drift.
 - **apr 6, 2026**: v4.1 — backup+starter split from backup+tandem (+1 instead of -1). 275-game audit.
 

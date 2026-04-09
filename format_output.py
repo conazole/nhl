@@ -224,6 +224,16 @@ def format_game(m, teams, line_lookup, injuries, context_map):
         h2h_str = "none in window"
     b2b_str = ", ".join(t.lower() for t in m["b2b_teams"]) if m["b2b_teams"] else "none"
 
+    # playoff context (informational)
+    info = m.get("info", {})
+    aw_po = info.get("aw_playoff", {})
+    hm_po = info.get("hm_playoff", {})
+    po_parts = []
+    for abbr, po in [(away_l, aw_po), (home_l, hm_po)]:
+        if po:
+            po_parts.append(f"{abbr} {po.get('pts', '?')}pts/{po.get('remaining', '?')}left ({po.get('status', '?')})")
+    playoff_str = " · ".join(po_parts) if po_parts else "n/a"
+
     # goalie info
     ac = "✓" if m["aw_confirmed"] else "✗"
     hc = "✓" if m["hm_confirmed"] else "✗"
@@ -233,6 +243,7 @@ def format_game(m, teams, line_lookup, injuries, context_map):
     out.append(f"combined r5: {m['comb_r5']}/10 ({m['comb_r5_pct']}%) · r15: {m['comb_r15']}/30 ({m['comb_r15_pct']}%)")
     parts = [f"h2h: {h2h_str}", f"b2b: {b2b_str}"]
     out.append(" · ".join(parts))
+    out.append(f"playoff: {playoff_str}")
     out.append("")
     out.append(f"{away_l}: {m['aw_goalie']} ({m['aw_goalie_cls']}, {m['aw_goalie_share']:.0f}%, sv% {m['aw_sv_pct']:.4f}) [{ac}]{elite_a}")
     out.append(f"{home_l}: {m['hm_goalie']} ({m['hm_goalie_cls']}, {m['hm_goalie_share']:.0f}%, sv% {m['hm_sv_pct']:.4f}) [{hc}]{elite_h}")

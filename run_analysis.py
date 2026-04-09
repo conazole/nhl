@@ -25,6 +25,7 @@ PBP_URL = "https://api-web.nhle.com/v1/gamecenter/{}/play-by-play"
 MP_URL_TEMPLATE = "https://peter-tanner.com/moneypuck/downloads/shots_{}.zip"
 
 CLUB_STATS_URL_TEMPLATE = "https://api-web.nhle.com/v1/club-stats/{{}}/{}/2"
+STANDINGS_URL = "https://api-web.nhle.com/v1/standings/now"
 
 # olympic breaks by season start year (only seasons with confirmed NHL participation)
 OLYMPIC_BREAKS = {
@@ -171,6 +172,35 @@ def fetch_one_team_stats(team):
         return (team, team_data)
     except Exception:
         return (team, {})
+
+
+def fetch_standings(teams_needed):
+    """fetch current standings, return playoff context per team.
+    informational only — not used in confidence scoring."""
+    try:
+        req = urllib.request.Request(STANDINGS_URL, headers=HDR)
+        data = json.loads(urllib.request.urlopen(req, timeout=10).read())
+    except Exception as e:
+        progress(f"  standings fetch failed: {e}")
+        return {}
+
+    # clinchIndicator: z=president/division, y=conference, x=playoff, e=eliminated
+    clinch_map = {"z": "clinched", "y": "clinched", "x": "clinched", "e": "eliminated"}
+    standings = {}
+    for t in data.get("standings", []):
+        abbrev = normalize_abbrev(t.get("teamAbbrev", {}).get("default", ""))
+        if abbrev not in teams_needed:
+            continue
+        ci = t.get("clinchIndicator", "")
+        status = clinch_map.get(ci, "fighting")
+        standings[abbrev] = {
+            "pts": t.get("points", 0),
+            "gp": t.get("gamesPlayed", 0),
+            "remaining": 82 - t.get("gamesPlayed", 0),
+            "status": status,
+            "wc_seq": t.get("wildcardSequence", 0),
+        }
+    return standings
 
 
 def fetch_season_goalie_stats(teams_tonight):
@@ -663,7 +693,7 @@ def compute_team_metrics(teams_needed, games_tonight, team_games,
 def compute_matchups(games_tonight, team_metrics, h2h_data,
                      league_avg_xga, base_rate, tonight_goalies,
                      season_goalie_stats=None, elite_goalies=None,
-                     tonight_lines=None):
+                     tonight_lines=None, standings=None):
     """compute matchup analysis and confidence scores."""
     progress("computing matchups...")
     if season_goalie_stats is None:
@@ -865,6 +895,8 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
             # informational (not in confidence score)
             "info": {
                 "sys_sum": sys_sum, "comb_pen": round(comb_pen, 2),
+                "aw_playoff": (standings or {}).get(away, {}),
+                "hm_playoff": (standings or {}).get(home, {}),
             },
         })
 
@@ -940,10 +972,17 @@ def main():
     # fetch full-season goalie stats for ALL teams (classification + dynamic elite)
     season_goalie_stats, elite_goalies = fetch_season_goalie_stats(teams_needed)
 
+    # fetch standings for playoff context (informational, mar-jun only)
+    target_month = target_dt.month
+    if target_month >= 3 and target_month <= 6:
+        standings = fetch_standings(teams_needed)
+    else:
+        standings = {}
+
     # compute matchups
     matchups = compute_matchups(
         games_tonight, metrics, h2h, league_avg_xga, base_rate, tonight_goalies,
-        season_goalie_stats, elite_goalies, tonight_lines)
+        season_goalie_stats, elite_goalies, tonight_lines, standings)
 
     elapsed = time.time() - t0
     progress(f"\ndone in {elapsed:.1f}s")

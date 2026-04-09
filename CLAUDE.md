@@ -17,7 +17,7 @@ v4 core validated on 1149 games (full 2025-26 season with pre-game lines). v4.1 
 - goalie classification: full-season starts share from `/v1/club-stats/{team}/20252026/2` — ≥60% starter, 40-59% tandem, <40% backup.
 - v4.1: backup+starter scores +1 (77.4% u2.5, starter anchors). backup+tandem stays -1 (62.0%).
 - goalie always scores — confirmed flag is informational only, not a scoring gate.
-- killed factors (NOT in scoring): poisson, elite bonus, b2b, context, system profile, penalty rate, early start. computed for informational display only.
+- killed factors (NOT in scoring): poisson, elite bonus, b2b, context, system profile, penalty rate, early start, playoff context (mar-jun only). computed for informational display only.
 - all log entries must include `"model": "v4"`.
 - v4 backtest: 64.8% parlays (+6.3pp over v3), 80.5% legs (+3.4pp). perfectly monotonic gradient.
 - v4 starts tracking mar 28 2026. v3 (mar 24-27) and v1/v2 are dead.
@@ -87,6 +87,68 @@ v4 core validated on 1149 games (full 2025-26 season with pre-game lines). v4.1 
 - flag script errors immediately — never silently work around them, stop and discuss.
 - use prefetch pipeline (prefetch.py + resolve_results.py + format_output.py + update_log.py).
 - no shortcuts — every model factor must use the correct data scope, not whatever's convenient.
+
+## date selection
+
+parse `$ARGUMENTS` to determine TARGET_DATE (YYYY-MM-DD):
+- empty → today
+- "tomorrow" → today + 1
+- date string (e.g. "mar 2", "2026-03-05") → parse it (assume current year)
+
+"yesterday" for results = TARGET_DATE - 1. future dates: flag goalie/injury uncertainty.
+
+## execution pipeline (5 steps)
+
+CRITICAL: use pipeline scripts. never manual WebFetch for goalies/lines.
+
+### step 1: resolve yesterday + prefetch today (PARALLEL)
+
+run simultaneously:
+
+```bash
+cd /Users/raz/claude/nhl && python3 resolve_results.py {TARGET_DATE}
+```
+```bash
+cd /Users/raz/claude/nhl && python3 prefetch.py {TARGET_DATE}
+```
+
+resolve_results.py: resolves TARGET_DATE-1, updates picks_log.jsonl, computes v4 record.
+prefetch.py: fetches goalies (dfo), lines (ESPN+Pinnacle), flags discrepancies. outputs `goalies_engine` + `lines` dicts.
+
+### step 2: review + postmortem
+
+1. write postmortem from resolve results (see postmortem rules).
+2. check `lines_needing_verification` — ONE WebSearch if discrepancy matters for a pick.
+3. check goalie conflicts (e.g. B2B) — ONE WebSearch max.
+4. build extras JSON: `{"postmortem": "...", "injuries": {}, "context": {}}`
+
+### step 3: run engine
+
+```bash
+cd /Users/raz/claude/nhl && python3 run_analysis.py {TARGET_DATE} \
+  --goalies '{GOALIES_ENGINE_JSON}' \
+  --lines '{LINES_JSON}' > /tmp/engine_output.json 2>&1
+```
+
+extract clean JSON (skip log lines): `tail -n +{first_json_line} > /tmp/engine_clean.json`
+
+### step 4: format output
+
+```bash
+cd /Users/raz/claude/nhl && python3 format_output.py {TARGET_DATE} /tmp/engine_clean.json \
+  --extras '{EXTRAS_JSON}'
+```
+
+prints full analysis to terminal + saves `analysis_{TARGET_DATE}.md`.
+
+### step 5: log + emails + commit
+
+```bash
+cd /Users/raz/claude/nhl && python3 update_log.py {TARGET_DATE} /tmp/engine_clean.json
+```
+
+send 2 emails per email rules (picks first, analysis second). quit Mail.app.
+`git add` + `git commit` + `git push` — always, no confirmation.
 
 ## change documentation
 
