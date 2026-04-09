@@ -86,6 +86,7 @@ v4 core validated on 1149 games (full 2025-26 season with pre-game lines). v4.1 
 - never rewrite pipeline scripts from scratch — edit existing ones.
 - flag script errors immediately — never silently work around them, stop and discuss.
 - use prefetch pipeline (prefetch.py + resolve_results.py + format_output.py + update_log.py).
+- review.py: weekly pattern analysis — run manually, not part of daily pipeline.
 - no shortcuts — every model factor must use the correct data scope, not whatever's convenient.
 
 ## date selection

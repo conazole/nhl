@@ -21,6 +21,12 @@ all rules live in CLAUDE.md (single source of truth). memory files below capture
 - [flag script errors immediately — never silently work around](feedback_flag_errors.md)
 - [run review.py weekly + "what we learned" report](feedback_weekly_review.md)
 
+## feedback (unlisted)
+- [betting discipline — parlay sizing, bankroll](feedback_betting_discipline.md)
+
+## user
+- [user profile — betting strategy, preferences](user_betting_strategy.md)
+
 ## project
 - [v4 model details — line factor, backtest, validation data](project_v4_model.md)
 - [v4.1: backup+starter → +1, split from backup+tandem (77.4%)](project_v41_backup_split.md)

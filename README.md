@@ -33,7 +33,7 @@ v4 core validated on 1149 games. v4.1 splits backup penalty by partner type (275
 
 ### killed factors (not in scoring)
 
-poisson edge, elite bonus, b2b/fatigue, context modifiers, system profile, penalty rate, early start. computed for informational display only.
+poisson edge, elite bonus, b2b/fatigue, context modifiers, system profile, penalty rate, early start, playoff context (mar-jun only). computed for informational display only.
 
 ## pipeline
 
@@ -94,16 +94,17 @@ outputs: confidence calibration, tier accuracy, line factor impact, 1p total dis
 | `CLAUDE.md` | single source of truth — all rules, confidence formula, parlay discipline, output/email format, execution pipeline |
 | `README.md` | project overview, model docs, file index, changelog |
 | `.claude/commands/nhl.md` | `/nhl` skill file — points to CLAUDE.md, triggers the pipeline |
-| `.claude/settings.local.json` | local claude code settings |
+| `.gitignore` | excludes .DS_Store, __pycache__, .cache/ |
 
 ### memory (claude code context across conversations)
 
 | file | purpose |
 | --- | --- |
 | `.claude/memory/MEMORY.md` | memory index — loaded into every conversation |
-| `.claude/memory/feedback_*.md` | user corrections and confirmed approaches (17 files) |
+| `.claude/memory/feedback_*.md` | user corrections and confirmed approaches (16 files) |
 | `.claude/memory/project_*.md` | project decisions and their rationale |
 | `.claude/memory/user_*.md` | user profile and preferences |
+| `.claude/memory/reference_*.md` | pointers to external resources |
 
 ### setup on a new machine
 
