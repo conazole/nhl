@@ -20,6 +20,7 @@ all rules live in CLAUDE.md (single source of truth). memory files below capture
 - [use prefetch pipeline for speed (~7 turns not 32)](feedback_use_prefetch_pipeline.md)
 - [flag script errors immediately — never silently work around](feedback_flag_errors.md)
 - [run review.py weekly + "what we learned" report](feedback_weekly_review.md)
+- [playoff context + cautions displayed per game, never scored](feedback_playoff_context_display.md)
 
 ## feedback (unlisted)
 - [betting discipline — parlay sizing, bankroll](feedback_betting_discipline.md)

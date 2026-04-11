@@ -45,6 +45,7 @@ v4 core validated on 1149 games (full 2025-26 season with pre-game lines). v4.1 
 - sort games by confidence level, highest first.
 - terminal: show FULL detailed analysis — 15-game tables, all metrics, confidence breakdowns.
 - save full analysis to `analysis_{YYYY-MM-DD}.md`. delete previous day's file.
+- playoff context + caution: every game block must show playoff status for both teams AND a caution line flagging the motivation/lineup risk (both fighting = favorable, clinched/eliminated mix = rest/variance risk). informational only, NOT in scoring. picks email must flag caution for each parlay leg.
 
 ## email rules
 

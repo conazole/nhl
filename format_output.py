@@ -56,6 +56,29 @@ def tier_label(conf):
         return f"⛔ {conf}/6"
 
 
+def playoff_caution(aw_po, hm_po, aw_label, hm_label):
+    """return caution/note string based on playoff status pair. informational
+    only — not in scoring. highlights lineup/motivation risk for u2.5 bets."""
+    if not aw_po or not hm_po:
+        return None
+    a_status = aw_po.get("status", "fighting")
+    h_status = hm_po.get("status", "fighting")
+    low_stakes = {"clinched", "eliminated"}
+
+    if a_status == "fighting" and h_status == "fighting":
+        return "✓ both fighting — max 1p defensive intensity, favors u2.5"
+    if a_status in low_stakes and h_status in low_stakes:
+        return f"⚠ meaningless game ({a_status}+{h_status}) — starter rest risk, high variance"
+    # mixed: one fighting, one locked in
+    if a_status == "fighting":
+        other, other_label = h_status, hm_label
+    else:
+        other, other_label = a_status, aw_label
+    if other == "clinched":
+        return f"⚠ {other_label} clinched — possible starter rest, less urgency"
+    return f"⚠ {other_label} eliminated — may be loose/unmotivated, variance risk"
+
+
 # ── line lookup from picks_log ──
 
 def build_line_lookup(entries):
@@ -244,6 +267,9 @@ def format_game(m, teams, line_lookup, injuries, context_map):
     parts = [f"h2h: {h2h_str}", f"b2b: {b2b_str}"]
     out.append(" · ".join(parts))
     out.append(f"playoff: {playoff_str}")
+    caution = playoff_caution(aw_po, hm_po, away_l, home_l)
+    if caution:
+        out.append(caution)
     out.append("")
     out.append(f"{away_l}: {m['aw_goalie']} ({m['aw_goalie_cls']}, {m['aw_goalie_share']:.0f}%, sv% {m['aw_sv_pct']:.4f}) [{ac}]{elite_a}")
     out.append(f"{home_l}: {m['hm_goalie']} ({m['hm_goalie_cls']}, {m['hm_goalie_share']:.0f}%, sv% {m['hm_sv_pct']:.4f}) [{hc}]{elite_h}")
