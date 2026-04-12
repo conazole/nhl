@@ -51,7 +51,7 @@ v4 core validated on 1149 games (full 2025-26 season with pre-game lines). v4.1 
 
 - two emails per run to `bk.conazole@icloud.com` via osascript.
 - email 1 (picks summary): subject "nhl 1p u2.5 — {date}". concise, phone-readable. parlay + 1-2 sentence reason per pick + season record + honorable mentions. under 20 lines, no tables.
-- email 2 (full analysis): subject "nhl 1p u2.5 analysis — {date}". mobile-optimized — NO tables. u2.5 streaks (`✓✓✓✗✓  ✗✓✗✓✗  ✓✓✓✓✓`, grouped in 5s). lines under 40 chars. CAPS section labels. all lowercase text. postmortem at full depth. key stats per game.
+- email 2 (full analysis): subject "nhl 1p u2.5 analysis — {date}". mobile-optimized — NO tables. u2.5 streaks (`✓✓✓✗✓  ✗✓✗✓✗  ✓✓✓✓✓`, grouped in 5s). lines under 40 chars. all lowercase text, including section labels. postmortem at full depth. key stats per game.
 - u2.5 column: ✅/❌ in analysis file, plain ✓/✗ in emails.
 - send picks email first, analysis email second. quit Mail.app after both.
 - both emails sent EVERY run — first run, re-run, doesn't matter. re-runs reflect updated picks.
