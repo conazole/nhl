@@ -184,8 +184,8 @@ def fetch_standings(teams_needed):
         progress(f"  standings fetch failed: {e}")
         return {}
 
-    # clinchIndicator: z=president/division, y=conference, x=playoff, e=eliminated
-    clinch_map = {"z": "clinched", "y": "clinched", "x": "clinched", "e": "eliminated"}
+    # clinchIndicator: p=presidents trophy, z=division, y=conference, x=playoff, e=eliminated
+    clinch_map = {"p": "clinched", "z": "clinched", "y": "clinched", "x": "clinched", "e": "eliminated"}
     standings = {}
     for t in data.get("standings", []):
         abbrev = normalize_abbrev(t.get("teamAbbrev", {}).get("default", ""))
