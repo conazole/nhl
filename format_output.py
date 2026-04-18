@@ -214,7 +214,13 @@ def format_game(m, teams, line_lookup, injuries, context_map):
 
     out = []
     out.append(f"## {away_l} @ {home_l} — {tier_label(conf)}")
-    out.append(f"> {start_time_et(m['start_utc'])} · {format_line(m['total_line'])}")
+    playoff_tag = ""
+    if m.get("is_playoff"):
+        gn = m.get("series_game_num")
+        playoff_tag = f" · 🏆 playoff game {gn}" if gn else " · 🏆 playoff"
+        if gn == 1:
+            playoff_tag += " (g1 cap — max 3/6)"
+    out.append(f"> {start_time_et(m['start_utc'])} · {format_line(m['total_line'])}{playoff_tag}")
     out.append("")
 
     # ── away team ──

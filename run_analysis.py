@@ -252,7 +252,8 @@ def fetch_season_goalie_stats(teams_tonight):
 # ============================================================
 
 def fetch_todays_games(target_date):
-    """return list of (away, home, start_utc) tuples for the target date."""
+    """return list of (away, home, start_utc, game_type, series_game_num) tuples.
+    game_type: 2=regular, 3=playoff. series_game_num: 1..7 for playoffs, None for regular."""
     progress(f"fetching games for {target_date}...")
     try:
         data = api_get(SCORE_URL.format(target_date))
@@ -269,8 +270,11 @@ def fetch_todays_games(target_date):
         aw = normalize_abbrev(g.get("awayTeam", {}).get("abbrev", ""))
         hm = normalize_abbrev(g.get("homeTeam", {}).get("abbrev", ""))
         start_utc = g.get("startTimeUTC", "")
+        game_type = g.get("gameType", 2)
+        series_status = g.get("seriesStatus") or {}
+        series_game_num = series_status.get("gameNumberOfSeries") if game_type == 3 else None
         if aw and hm:
-            games.append((aw, hm, start_utc))
+            games.append((aw, hm, start_utc, game_type, series_game_num))
     progress(f"  {len(games)} games found")
     return games
 
@@ -702,7 +706,13 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
         elite_goalies = frozenset()
     matchups = []
 
-    for away, home, start_utc in games_tonight:
+    for game_tuple in games_tonight:
+        # tuple may be (away, home, start_utc) from older callers, or
+        # (away, home, start_utc, game_type, series_game_num) from fetch_todays_games
+        away, home, start_utc = game_tuple[0], game_tuple[1], game_tuple[2]
+        game_type = game_tuple[3] if len(game_tuple) > 3 else 2
+        series_game_num = game_tuple[4] if len(game_tuple) > 4 else None
+        is_playoff = (game_type == 3)
         am = team_metrics.get(away)
         hm = team_metrics.get(home)
         if not am or not hm:
@@ -796,6 +806,19 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
         # starts-share classification: >=60% starter, 40-59% tandem, <40% backup
         aw_cls = "starter" if aw_share >= 0.60 else ("tandem" if aw_share >= 0.40 else "backup")
         hm_cls = "starter" if hm_share >= 0.60 else ("tandem" if hm_share >= 0.40 else "backup")
+
+        # v4.2 playoff goalie override (playoffs only, gameType=3):
+        # 88.2% of playoff starts go to each team's #1 (88 team-series audit). named
+        # goalies in playoffs ARE the #1, regardless of regular-season starts share
+        # (which is dragged down by injuries/call-ups/tandems that disappear in playoffs).
+        # force classification to "starter" when we have a named goalie for a playoff game.
+        # regular-season behavior unchanged.
+        if is_playoff:
+            if aw_goalie and aw_goalie != "?":
+                aw_cls = "starter"
+            if hm_goalie and hm_goalie != "?":
+                hm_cls = "starter"
+
         aw_backup = aw_cls == "backup"
         hm_backup = hm_cls == "backup"
 
@@ -847,6 +870,15 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
         total_conf = max(0, f_r5 + f_r15 + f_goalie + f_line)
         total_conf_projected = max(0, f_r5 + f_r15 + f_goalie_projected + f_line)
 
+        # v4.2 playoff game-1 cap (playoffs only, gameType=3, game 1 of series):
+        # 5-year audit shows g1 u2.5 rate is 72% pooled and 63.3% in last 2 seasons —
+        # BELOW the regular-season baseline. teams feel each other out, no rhythm,
+        # amped defenses. cap confidence at 3 (HM max) so g1s can never become picks.
+        # g2+ are unaffected (they trend up: g4+ = 81.0% last 2 seasons).
+        if is_playoff and series_game_num == 1:
+            total_conf = min(total_conf, 3)
+            total_conf_projected = min(total_conf_projected, 3)
+
         # informational factors (not in confidence, shown for context)
         sys_map = {"structured": 1, "moderate": 0, "volatile": -1}
         sys_sum = sys_map.get(am["sys_class"], 0) + sys_map.get(hm["sys_class"], 0)
@@ -871,6 +903,8 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
             "hm_goalie_share": round(hm_share * 100, 0),
             "aw_goalie_cls": aw_cls, "hm_goalie_cls": hm_cls,
             "confidence": total_conf,
+            "is_playoff": is_playoff,
+            "series_game_num": series_game_num,
             "is_early": is_early,
             "start_utc": start_utc,
             "aw_confirmed": aw_confirmed,
@@ -1015,7 +1049,7 @@ def main():
 
     output = {
         "target_date": target_date,
-        "games_tonight": [(a, h, s) for a, h, s in games_tonight],
+        "games_tonight": [list(g) for g in games_tonight],
         "league_total": league_total,
         "league_u25": league_u25,
         "base_rate": round(base_rate, 1),

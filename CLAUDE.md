@@ -2,9 +2,9 @@
 
 real money is at stake — accuracy over speed. never estimate or guess scores. all output must be in lowercase.
 
-## confidence formula v4.1 (4 factors, /6 scale)
+## confidence formula v4.2 (4 factors, /6 scale, playoff-aware)
 
-v4 core validated on 1149 games (full 2025-26 season with pre-game lines). v4.1 splits backup penalty by partner type (275-game audit, apr 6 2026).
+v4 core validated on 1149 games (full 2025-26 season with pre-game lines). v4.1 splits backup penalty by partner type (275-game audit, apr 6 2026). v4.2 adds playoff-only overrides (435-game playoff audit + 88-team-series goalie audit, apr 18 2026).
 
 | factor | criteria | points |
 | --- | --- | --- |
@@ -14,13 +14,21 @@ v4 core validated on 1149 games (full 2025-26 season with pre-game lines). v4.1 
 | total line | ≤5.5: +1, ≤6.0: 0, ≥6.5: -1 | -1 to +1 |
 
 - pick threshold: ≥4/6. honorable mention: 2-3/6. avoid: <2/6.
-- goalie classification: full-season starts share from `/v1/club-stats/{team}/20252026/2` — ≥60% starter, 40-59% tandem, <40% backup.
+- goalie classification (regular season): full-season starts share from `/v1/club-stats/{team}/20252026/2` — ≥60% starter, 40-59% tandem, <40% backup.
 - v4.1: backup+starter scores +1 (77.4% u2.5, starter anchors). backup+tandem stays -1 (62.0%).
 - goalie always scores — confirmed flag is informational only, not a scoring gate.
-- killed factors (NOT in scoring): poisson, elite bonus, b2b, context, system profile, penalty rate, early start, playoff context (mar-jun only). computed for informational display only.
+- killed factors (NOT in scoring): poisson, elite bonus, b2b, context, system profile, penalty rate, early start, standings-status playoff context (mar-jun only, informational display only).
 - all log entries must include `"model": "v4"`.
 - v4 backtest: 64.8% parlays (+6.3pp over v3), 80.5% legs (+3.4pp). perfectly monotonic gradient.
 - v4 starts tracking mar 28 2026. v3 (mar 24-27) and v1/v2 are dead.
+
+### v4.2 playoff overrides (gameType=3 only — regular season untouched)
+
+- **goalie override:** when `gameType == 3`, any dfo-named goalie is classified as `starter` regardless of regular-season starts share. justified by 88-team-series audit (88.2% of playoff starts go to team's #1, only 13% true tandems). regular-season starts share is dragged down by injuries/call-ups/tandems that disappear in playoffs.
+- **game-1 confidence cap:** when `gameType == 3` and `seriesStatus.gameNumberOfSeries == 1`, confidence is capped at 3 (HM max). justified by 435-game playoff audit: g1 u2.5 rate is 72.0% pooled and **63.3% in the last 2 seasons** — BELOW the regular-season baseline (73%). g2+ recover to 77-80%, g4+ hit 81%. cap prevents false picks on high-variance g1 slates.
+- **regular season behavior is unchanged.** all patches are gated on `gameType == 3`; gameType=2 games flow through the original v4.1 path with no modification.
+- **both patches must ship together.** the goalie override alone would push g1s with starter+starter matchups to ≥4/6 picks — precisely the games the 63.3% audit says to avoid. goalie override without cap is net-negative EV.
+- v4.2 starts tracking apr 18 2026 (first playoff slate).
 
 ## parlay rules
 
