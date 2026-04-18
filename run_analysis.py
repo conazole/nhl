@@ -252,8 +252,9 @@ def fetch_season_goalie_stats(teams_tonight):
 # ============================================================
 
 def fetch_todays_games(target_date):
-    """return list of (away, home, start_utc, game_type, series_game_num) tuples.
-    game_type: 2=regular, 3=playoff. series_game_num: 1..7 for playoffs, None for regular."""
+    """return list of (away, home, start_utc, game_type, series_info) tuples.
+    game_type: 2=regular, 3=playoff. series_info: dict with game_num/round/top_seed/etc
+    for playoffs, None for regular season."""
     progress(f"fetching games for {target_date}...")
     try:
         data = api_get(SCORE_URL.format(target_date))
@@ -271,10 +272,20 @@ def fetch_todays_games(target_date):
         hm = normalize_abbrev(g.get("homeTeam", {}).get("abbrev", ""))
         start_utc = g.get("startTimeUTC", "")
         game_type = g.get("gameType", 2)
-        series_status = g.get("seriesStatus") or {}
-        series_game_num = series_status.get("gameNumberOfSeries") if game_type == 3 else None
+        series_info = None
+        if game_type == 3:
+            ss = g.get("seriesStatus") or {}
+            series_info = {
+                "game_num": ss.get("gameNumberOfSeries"),
+                "round": ss.get("round"),
+                "round_label": ss.get("seriesTitle"),
+                "top_seed": ss.get("topSeedTeamAbbrev"),
+                "top_wins": ss.get("topSeedWins", 0),
+                "bottom_seed": ss.get("bottomSeedTeamAbbrev"),
+                "bottom_wins": ss.get("bottomSeedWins", 0),
+            }
         if aw and hm:
-            games.append((aw, hm, start_utc, game_type, series_game_num))
+            games.append((aw, hm, start_utc, game_type, series_info))
     progress(f"  {len(games)} games found")
     return games
 
@@ -708,11 +719,12 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
 
     for game_tuple in games_tonight:
         # tuple may be (away, home, start_utc) from older callers, or
-        # (away, home, start_utc, game_type, series_game_num) from fetch_todays_games
+        # (away, home, start_utc, game_type, series_info) from fetch_todays_games
         away, home, start_utc = game_tuple[0], game_tuple[1], game_tuple[2]
         game_type = game_tuple[3] if len(game_tuple) > 3 else 2
-        series_game_num = game_tuple[4] if len(game_tuple) > 4 else None
+        series_info = game_tuple[4] if len(game_tuple) > 4 else None
         is_playoff = (game_type == 3)
+        series_game_num = series_info.get("game_num") if isinstance(series_info, dict) else None
         am = team_metrics.get(away)
         hm = team_metrics.get(home)
         if not am or not hm:
@@ -905,6 +917,7 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
             "confidence": total_conf,
             "is_playoff": is_playoff,
             "series_game_num": series_game_num,
+            "series_info": series_info,
             "is_early": is_early,
             "start_utc": start_utc,
             "aw_confirmed": aw_confirmed,

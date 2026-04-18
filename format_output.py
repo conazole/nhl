@@ -290,23 +290,37 @@ def format_game(m, teams, line_lookup, injuries, context_map):
         h2h_str = "none in window"
     b2b_str = ", ".join(t.lower() for t in m["b2b_teams"]) if m["b2b_teams"] else "none"
 
-    info = m.get("info", {})
-    aw_po = info.get("aw_playoff", {})
-    hm_po = info.get("hm_playoff", {})
-    po_parts = []
-    for abbr, po in [(away_l, aw_po), (home_l, hm_po)]:
-        if po:
-            po_parts.append(f"{abbr} {po.get('pts', '?')}pts/{po.get('remaining', '?')}left ({po.get('status', '?')})")
-    playoff_str = " · ".join(po_parts) if po_parts else "n/a"
-
     out.append("### context")
     out.append("")
     out.append(f"- **h2h:** {h2h_str}")
     out.append(f"- **b2b:** {b2b_str}")
-    out.append(f"- **playoff:** {playoff_str}")
-    caution = playoff_caution(aw_po, hm_po, away_l, home_l)
-    if caution:
-        out.append(f"- **caution:** {caution.lstrip('⚠ ').strip()}")
+
+    # playoff games: suppress regular-season standings/caution (every playoff team is "clinched"
+    # by definition, so the clinched/eliminated caution fires incorrectly). use series state instead.
+    if m.get("is_playoff"):
+        si = m.get("series_info") or {}
+        rd_label = (si.get("round_label") or f"round {si.get('round')}" if si.get("round") else "playoff round").lower()
+        gn = si.get("game_num")
+        top, bot = si.get("top_seed"), si.get("bottom_seed")
+        top_w, bot_w = si.get("top_wins", 0), si.get("bottom_wins", 0)
+        if top and bot and (top_w or bot_w):
+            series_str = f"{rd_label}, game {gn} — {top.lower()} {top_w}-{bot_w} {bot.lower()}"
+        else:
+            series_str = f"{rd_label}, game {gn} (series tied 0-0)"
+        out.append(f"- **series:** {series_str}")
+    else:
+        info = m.get("info", {})
+        aw_po = info.get("aw_playoff", {})
+        hm_po = info.get("hm_playoff", {})
+        po_parts = []
+        for abbr, po in [(away_l, aw_po), (home_l, hm_po)]:
+            if po:
+                po_parts.append(f"{abbr} {po.get('pts', '?')}pts/{po.get('remaining', '?')}left ({po.get('status', '?')})")
+        playoff_str = " · ".join(po_parts) if po_parts else "n/a"
+        out.append(f"- **playoff race:** {playoff_str}")
+        caution = playoff_caution(aw_po, hm_po, away_l, home_l)
+        if caution:
+            out.append(f"- **caution:** {caution.lstrip('⚠ ').strip()}")
 
     # injuries + context (only if present)
     inj_a = injuries.get(away, "")
