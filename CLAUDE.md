@@ -180,6 +180,26 @@ cd /Users/raz/claude/nhl && python3 update_log.py {TARGET_DATE} /tmp/engine_clea
 send 2 emails per email rules (picks first, analysis second). quit Mail.app.
 `git add` + `git commit` + `git push` — always, no confirmation.
 
+### optional step 6: closing line capture (~30 min before first puck drop)
+
+```bash
+cd /Users/raz/claude/nhl && python3 close_line.py {TARGET_DATE}
+```
+
+re-fetches lines and writes `closing_line`, `line_delta`, `line_direction`, `closing_ts` to each unresolved entry. safe to run multiple times. safe alongside /nhl re-runs (update_log.py preserves these fields across re-runs).
+
+clv interpretation: for u2.5 bets, line going UP = market pricing more goals = our bet got harder (negative clv). flip sign in review.py so positive clv = market-moved-toward-us.
+
+### weekly: revalidate + review
+
+```bash
+cd /Users/raz/claude/nhl && python3 review.py --last 14
+cd /Users/raz/claude/nhl && python3 research/revalidate.py
+```
+
+review.py: per-factor hit rates, CLV trend, base rate drift, weekly trend.
+revalidate.py: compares recent 100 games to v4 baselines, flags >5pp drift.
+
 ## ice — parlay critic
 
 ice reviews the engine's 2-leg parlay before the report is written. she has no memory of the main thread's reasoning — that's the point. she finds blindspots the deterministic model can't score (goalie risk the model marked "starter" but external signals disagree, playoff context that inverts a pick, sharp line movement, recent trend contradictions, divisional high-scoring traps).

@@ -302,6 +302,89 @@ def analyze(entries, last_days=None):
             t = d["w"] + d["l"]
             out(f"  wk {wk}  {d['w']:>2}w {d['l']:>2}l  ({pct(d['w'], t):>6})  {bar(d['w'], t, 12)}")
 
+    # ── factor hit rates ────────────────────────────
+    # for each scoring factor (r5, r15, goalie, line), break down u2.5 hit rate
+    # by how many points that factor contributed. lets us spot individual factor
+    # decay that's hidden inside the aggregate confidence record.
+    section("factor hit rates (all v4 entries with factor breakdown)")
+    entries_with_factors = [e for e in entries if e.get("factors") and e.get("actual_1p_total") is not None]
+    if not entries_with_factors:
+        out("  no entries with factor breakdown yet — field added apr 18 2026")
+        out(f"  {DIM}once enough v4.2+ games land, this will show per-factor u2.5 rates.{RESET}")
+    else:
+        out(f"  sample: {len(entries_with_factors)} resolved games with factor data")
+        out()
+        for factor in ("r5", "r15", "goalie", "line"):
+            buckets = defaultdict(lambda: {"w": 0, "l": 0})
+            for e in entries_with_factors:
+                pts = e["factors"].get(factor)
+                if pts is None:
+                    continue
+                hit = e["actual_1p_total"] < 3
+                buckets[pts]["w" if hit else "l"] += 1
+            if not buckets:
+                continue
+            out(f"  {factor}:")
+            for pts in sorted(buckets.keys(), reverse=True):
+                b = buckets[pts]
+                n = b["w"] + b["l"]
+                out(f"    {pts:+d}  {b['w']:>3}/{n:<3}  ({pct(b['w'], n):>6})  {bar(b['w'], n, 12)}")
+
+    # ── closing line value (CLV) ───────────────────
+    # CLV for a total-under bet: if line closes HIGHER than when we logged it, the
+    # market priced more goals and our u2.5 got harder → negative CLV. flip sign
+    # so that POSITIVE clv = market moved in our favor.
+    section("closing line value")
+    with_clv = [e for e in entries if "line_delta" in e and e.get("actual_1p_total") is not None]
+    if not with_clv:
+        out("  no closing-line captures yet — run close_line.py ~30 min before first puck drop")
+        out(f"  {DIM}cron: 30 18 * * *  python3 close_line.py $(date +\\%Y-\\%m-\\%d){RESET}")
+    else:
+        n = len(with_clv)
+        avg_delta = sum(e["line_delta"] for e in with_clv) / n
+        clv_us = -avg_delta  # flip sign: for u2.5, line-down is good for us
+        out(f"  resolved games with closing-line data: {n}")
+        out(f"  avg line_delta (close - open): {avg_delta:+.2f}")
+        out(f"  clv (u2.5-aligned, higher = better): {clv_us:+.2f}")
+        if clv_us > 0.10:
+            out(f"  {GREEN}✓ market is moving toward us — we're pricing earlier than sharps.{RESET}")
+        elif clv_us < -0.10:
+            out(f"  {RED}⚠ market is moving against us — we're the late money, check thesis.{RESET}")
+        else:
+            out(f"  {DIM}flat. market converging with our priors.{RESET}")
+
+        # last 30 resolved CLV rolling (most recent first)
+        last30 = sorted(with_clv, key=lambda e: e["date"], reverse=True)[:30]
+        if last30:
+            avg30 = -sum(e["line_delta"] for e in last30) / len(last30)
+            out(f"  last 30 games rolling clv: {avg30:+.2f}")
+
+    # ── base rate drift monitor ────────────────────
+    # 1p u2.5 league-wide base rate. v4 was validated at 73.0%. drift > 5pp
+    # means the scoring regime has shifted and our weights may need re-validation.
+    section("base rate drift")
+    # use every resolved entry (pick + hm + avoid all represent a played game)
+    played = [e for e in entries if e.get("actual_1p_total") is not None]
+    hits = sum(1 for e in played if e["actual_1p_total"] < 3)
+    if played:
+        rate = 100 * hits / len(played)
+        drift = rate - 73.0
+        out(f"  season u2.5 base rate: {rate:.1f}% ({hits}/{len(played)}) vs 73.0% v4 baseline")
+        out(f"  drift: {drift:+.1f}pp")
+        if abs(drift) < 2.5:
+            out(f"  {GREEN}✓ regime stable — v4 weights still valid.{RESET}")
+        elif abs(drift) < 5.0:
+            out(f"  {YELLOW}⚠ minor drift — monitor but no action needed.{RESET}")
+        else:
+            out(f"  {RED}⚠ significant drift — run research/revalidate.py, weights may need update.{RESET}")
+
+        # rolling last 100 for recent-regime signal
+        last100 = sorted(played, key=lambda e: e["date"], reverse=True)[:100]
+        if len(last100) >= 30:
+            r_hits = sum(1 for e in last100 if e["actual_1p_total"] < 3)
+            r_rate = 100 * r_hits / len(last100)
+            out(f"  last {len(last100)} games: {r_rate:.1f}% (rolling recent regime)")
+
     # ── synthesis ──────────────────────────────────
     section("what we've learned")
 

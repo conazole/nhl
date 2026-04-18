@@ -30,6 +30,8 @@ from collections import defaultdict
 
 LOG_PATH = "/Users/raz/claude/nhl/picks_log.jsonl"
 SCORE_URL = "https://api-web.nhle.com/v1/score/{}"
+BOXSCORE_URL = "https://api-web.nhle.com/v1/gamecenter/{}/boxscore"
+RIGHTRAIL_URL = "https://api-web.nhle.com/v1/gamecenter/{}/right-rail"
 HDR = {"User-Agent": "Mozilla/5.0"}
 
 
@@ -72,20 +74,89 @@ def normalize_abbrev(abbrev):
     return mapping.get(abbrev.upper(), abbrev.upper())
 
 
-def get_1p_totals(date_str):
-    """fetch 1p goal totals for all games on a date. returns {game_key: 1p_total}."""
+def get_officials(game_id):
+    """fetch referee names from the right-rail endpoint. returns
+    {"referees": [name, name], "linesmen": [name, name]} or {} on failure.
+    tracking officials lets us later analyze whether specific crews produce
+    higher/lower 1p scoring (some crews call 30%+ more penalties → more pp)."""
+    try:
+        data = api_get(RIGHTRAIL_URL.format(game_id), timeout=15)
+    except Exception:
+        return {}
+    gi = data.get("gameInfo") or {}
+    refs = [(r.get("default") or "").strip() for r in (gi.get("referees") or []) if r]
+    lines = [(l.get("default") or "").strip() for l in (gi.get("linesmen") or []) if l]
+    out = {}
+    if any(refs):
+        out["referees"] = [r for r in refs if r]
+    if any(lines):
+        out["linesmen"] = [l for l in lines if l]
+    return out
+
+
+def get_starting_goalies(game_id):
+    """fetch starting goalies for a completed game via the boxscore endpoint.
+    returns {"away": "lastname", "home": "lastname"} or {} on failure.
+    name.default on this endpoint is formatted "J. Oettinger" — we split on
+    whitespace and take the last token to get just the surname."""
+    try:
+        data = api_get(BOXSCORE_URL.format(game_id), timeout=15)
+    except Exception:
+        return {}
+    pbs = data.get("playerByGameStats") or {}
+    out = {}
+    for side, key in (("awayTeam", "away"), ("homeTeam", "home")):
+        for g in pbs.get(side, {}).get("goalies", []):
+            if g.get("starter"):
+                name = (g.get("name") or {}).get("default", "").strip()
+                last = name.split()[-1] if name else ""
+                if last:
+                    out[key] = last.lower()
+                break
+    return out
+
+
+def get_game_actuals(date_str):
+    """fetch per-game actuals for a date: 1p total, away/home 1p split,
+    game_id, and starting goalies. returns {game_key: {...}}."""
     data = api_get(SCORE_URL.format(date_str))
-    totals = {}
+    out = {}
     for g in data.get("games", []):
         state = g.get("gameState", "")
         if state not in ("OFF", "FINAL"):
             continue
         away = normalize_abbrev(g["awayTeam"]["abbrev"]).lower()
         home = normalize_abbrev(g["homeTeam"]["abbrev"]).lower()
-        goals_1p = sum(1 for goal in g.get("goals", []) if goal.get("period") == 1)
+        away_abbr = g["awayTeam"]["abbrev"]
+        home_abbr = g["homeTeam"]["abbrev"]
+        away_1p = 0
+        home_1p = 0
+        for goal in g.get("goals", []):
+            if goal.get("period") != 1:
+                continue
+            team = (goal.get("teamAbbrev") or "").upper()
+            # teamAbbrev may be a dict in newer api versions
+            if isinstance(goal.get("teamAbbrev"), dict):
+                team = goal["teamAbbrev"].get("default", "").upper()
+            if team == away_abbr.upper():
+                away_1p += 1
+            elif team == home_abbr.upper():
+                home_1p += 1
+        game_id = g.get("id")
+        goalies = get_starting_goalies(game_id) if game_id else {}
+        officials = get_officials(game_id) if game_id else {}
         game_key = f"{away} @ {home}"
-        totals[game_key] = goals_1p
-    return totals
+        out[game_key] = {
+            "total_1p": away_1p + home_1p,
+            "away_1p": away_1p,
+            "home_1p": home_1p,
+            "game_id": game_id,
+            "actual_goalie_away": goalies.get("away"),
+            "actual_goalie_home": goalies.get("home"),
+            "referees": officials.get("referees"),
+            "linesmen": officials.get("linesmen"),
+        }
+    return out
 
 
 def compute_season_record(entries):
@@ -142,22 +213,46 @@ def main():
         print(json.dumps(result))
         return
 
-    # fetch actual scores
+    # fetch actual scores + starting goalies + home/away 1p splits
     try:
-        actuals = get_1p_totals(yesterday)
+        actuals = get_game_actuals(yesterday)
     except Exception as e:
         print(json.dumps({"error": f"failed to fetch scores for {yesterday}: {e}"}), file=sys.stderr)
         sys.exit(1)
 
-    # resolve each entry
+    # resolve each entry — we now record:
+    #   actual_1p_total, away_1p_goals, home_1p_goals
+    #   actual_goalie_away, actual_goalie_home (to detect dfo misses)
+    #   goalie_prediction_hit (bool: did our predicted goalies match actuals on both sides?)
     resolved = []
     for e in entries:
         if e["date"] == yesterday and "result" not in e:
             game = e["game"]
             if game in actuals:
-                total = actuals[game]
+                act = actuals[game]
+                total = act["total_1p"]
                 e["actual_1p_total"] = total
+                e["away_1p_goals"] = act["away_1p"]
+                e["home_1p_goals"] = act["home_1p"]
                 e["result"] = "win" if total <= 2 else "loss"
+                if act.get("actual_goalie_away"):
+                    e["actual_goalie_away"] = act["actual_goalie_away"]
+                if act.get("actual_goalie_home"):
+                    e["actual_goalie_home"] = act["actual_goalie_home"]
+                if act.get("referees"):
+                    e["referees"] = act["referees"]
+                if act.get("linesmen"):
+                    e["linesmen"] = act["linesmen"]
+                if act.get("game_id"):
+                    e["game_id"] = act["game_id"]
+                # goalie-prediction-hit: compare predicted vs actual (last-name match).
+                # only set if we recorded a prediction — legacy entries skip this.
+                pred_a = (e.get("aw_goalie") or "").lower()
+                pred_h = (e.get("hm_goalie") or "").lower()
+                act_a = (act.get("actual_goalie_away") or "").lower()
+                act_h = (act.get("actual_goalie_home") or "").lower()
+                if pred_a and pred_h and act_a and act_h:
+                    e["goalie_prediction_hit"] = (pred_a == act_a and pred_h == act_h)
                 resolved.append({
                     "game": game,
                     "result": e["result"],

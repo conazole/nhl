@@ -46,13 +46,19 @@ def write_log(entries):
 
 
 def entries_from_engine(data):
-    """extract log entries from engine JSON output."""
+    """extract log entries from engine JSON output.
+    persists everything we'll want for later backtesting:
+      - factors dict (r5/r15/goalie/line individual scores)
+      - goalie_pair + per-team classification + predicted goalies + confirmed flags
+      - is_playoff + series_info (round, game_num, seeds, series score)
+    old log entries simply lack these fields — consumers must use .get() with defaults."""
     entries = []
     for m in data["matchups"]:
         away = m["away"].lower()
         home = m["home"].lower()
         conf = m["confidence"]
 
+        factors = m.get("factors") or {}
         entry = {
             "game": f"{away} @ {home}",
             "confidence": conf,
@@ -60,7 +66,30 @@ def entries_from_engine(data):
             "combined_recent5_pct": m.get("comb_r5_pct", 0),
             "combined_last15_pct": m.get("comb_r15_pct", 0),
             "poisson_pct": m.get("poisson_pct", 0),
+
+            # factor breakdown (v4.2+): individual contributions so we can backtest weights
+            "factors": {
+                "r5": factors.get("r5"),
+                "r15": factors.get("r15"),
+                "goalie": factors.get("goalie"),
+                "line": factors.get("line"),
+            },
+
+            # goalie prediction state (what we believed when the pick was made)
+            "goalie_pair": factors.get("goalie_pair"),
+            "aw_goalie": m.get("aw_goalie"),
+            "hm_goalie": m.get("hm_goalie"),
+            "aw_goalie_cls": m.get("aw_goalie_cls"),
+            "hm_goalie_cls": m.get("hm_goalie_cls"),
+            "aw_confirmed": m.get("aw_confirmed", False),
+            "hm_confirmed": m.get("hm_confirmed", False),
+
+            # playoff / series state
+            "is_playoff": bool(m.get("is_playoff")),
         }
+        if m.get("is_playoff") and m.get("series_info"):
+            entry["series_info"] = m.get("series_info")
+
         if conf < 2:
             entry["tier"] = "avoid"
         elif conf < 4:
@@ -110,12 +139,30 @@ def main():
     # load existing log
     entries = read_log()
 
+    # preserve closing-line fields across re-runs: if we already captured
+    # closing_line (e.g., from close_line.py running earlier today) for a given
+    # (date, game), stash it so we can re-attach after the pick refresh.
+    CLOSING_FIELDS = ("closing_line", "line_delta", "line_direction", "closing_ts")
+    preserved = {}
+    for e in entries:
+        if e.get("date") == target_date and "result" not in e:
+            carry = {k: e[k] for k in CLOSING_FIELDS if k in e}
+            if carry:
+                preserved[e["game"]] = carry
+
     # remove existing entries for target_date that DON'T have results
     # (resolved entries are sacred — never touch them)
     kept = [e for e in entries if not (e["date"] == target_date and "result" not in e)]
     removed = len(entries) - len(kept)
 
-    # add new entries with standard fields
+    # fields we pass through transparently (present in engine-derived entries,
+    # absent in hand-crafted legacy entries — both cases work).
+    PASSTHROUGH = (
+        "tier", "reason", "factors", "goalie_pair",
+        "aw_goalie", "hm_goalie", "aw_goalie_cls", "hm_goalie_cls",
+        "aw_confirmed", "hm_confirmed", "is_playoff", "series_info",
+    )
+
     added = 0
     for ne in new_entries:
         entry = {
@@ -130,11 +177,12 @@ def main():
             "total_line": ne.get("total_line"),
             "model": ne.get("model", "v4"),
         }
-        # optional fields
-        if "tier" in ne:
-            entry["tier"] = ne["tier"]
-        if "reason" in ne:
-            entry["reason"] = ne["reason"]
+        for field in PASSTHROUGH:
+            if field in ne and ne[field] is not None:
+                entry[field] = ne[field]
+        # re-attach any closing-line fields we captured earlier for this game
+        if entry["game"] in preserved:
+            entry.update(preserved[entry["game"]])
         kept.append(entry)
         added += 1
 
