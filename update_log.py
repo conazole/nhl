@@ -66,6 +66,13 @@ def entries_from_engine(data):
         elif conf < 4:
             entry["tier"] = "honorable_mention"
         entries.append(entry)
+
+    # solo qualifier rule: parlay requires n>=2 picks at >=4/6.
+    # if exactly one game clears >=4, it becomes an honorable mention, not a pick.
+    qualifiers = [e for e in entries if e["confidence"] >= 4]
+    if len(qualifiers) == 1:
+        qualifiers[0]["tier"] = "honorable_mention"
+
     return entries
 
 

@@ -384,6 +384,52 @@ def main():
     postmortem_text = extras.get("postmortem", "")
     injuries = extras.get("injuries", {})
     context_map = extras.get("context", {})
+    ice = extras.get("ice") or None
+
+    # zero-games guard — engine returns {"error": "no games found"} on off-days
+    if data.get("error") == "no games found":
+        dt = datetime.strptime(target_date, "%Y-%m-%d")
+        date_label = dt.strftime("%B %-d").lower()
+
+        all_entries_tmp = []
+        with open(LOG_PATH, "r") as lf:
+            for line in lf:
+                if not line.strip():
+                    continue
+                try:
+                    all_entries_tmp.append(json.loads(line))
+                except json.JSONDecodeError:
+                    pass
+        record = compute_season_record(all_entries_tmp)
+
+        out = [
+            f"# nhl 1p u2.5 analysis — {date_label}, {dt.year}",
+            "",
+            "## 🚫 no play tonight — 0 games scheduled",
+            "",
+            "## season record (v4)",
+            "",
+            f"parlays: {record['parlay_w']}-{record['parlay_l']} ({pct(record['parlay_w'], record['parlay_l'])}%) · legs: {record['leg_w']}-{record['leg_l']} ({pct(record['leg_w'], record['leg_l'])}%) · 5+: {record['c5_w']}-{record['c5_l']}",
+            "",
+        ]
+        if postmortem_text:
+            out.append("## 📊 postmortem")
+            out.append("")
+            out.extend(postmortem_text.strip().split("\n"))
+            out.append("")
+        full_output = "\n".join(out)
+        print(full_output)
+        analysis_path = f"/Users/raz/claude/nhl/analysis_{target_date}.md"
+        prev_date = (dt - timedelta(days=1)).strftime("%Y-%m-%d")
+        prev_path = f"/Users/raz/claude/nhl/analysis_{prev_date}.md"
+        import os
+        if os.path.exists(prev_path):
+            os.remove(prev_path)
+            print(f"[deleted {prev_path}]", file=sys.stderr)
+        with open(analysis_path, "w") as f:
+            f.write(full_output)
+        print(f"[saved to {analysis_path}]", file=sys.stderr)
+        return
 
     all_entries = []
     with open(LOG_PATH, "r") as f:
@@ -424,6 +470,34 @@ def main():
     out.extend(format_recommendation(data["matchups"], record))
     out.append("---")
     out.append("")
+
+    # ── ice critic review (only when there's a 2-leg parlay) ──
+    if ice:
+        out.append("## 🧊 ice review")
+        out.append("")
+        verdict = ice.get("verdict", "").strip()
+        if verdict:
+            out.append(f"**verdict:** {verdict.lower()}")
+            out.append("")
+        per_leg = ice.get("per_leg") or []
+        for leg in per_leg:
+            game = leg.get("game", "").lower()
+            call = leg.get("call", "").lower()
+            note = leg.get("note", "")
+            out.append(f"- {game} — **{call}**{(' · ' + note) if note else ''}")
+        if per_leg:
+            out.append("")
+        concerns = ice.get("concerns", "").strip()
+        if concerns:
+            for line in concerns.split("\n"):
+                out.append(line)
+            out.append("")
+        override = ice.get("override", "").strip()
+        if override:
+            out.append(f"**override:** {override}")
+            out.append("")
+        out.append("---")
+        out.append("")
 
     # ── per-game analysis ──
     for m in data["matchups"]:

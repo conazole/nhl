@@ -134,12 +134,30 @@ cd /Users/raz/claude/nhl && python3 run_analysis.py {TARGET_DATE} \
 
 extract clean JSON (skip log lines): `tail -n +{first_json_line} > /tmp/engine_clean.json`
 
+### step 3b: spawn ice — parlay critic (parlay nights only)
+
+if the engine returned 2 picks (n=2 at ≥4/6), ALWAYS spawn ice (via the `Agent` tool) before step 4. ice is a skeptical critic with fresh context — her job is to find reasons the parlay could lose that the deterministic model can't price. RESPECT her verdict unless you have a specific reason to override (document it in the analysis + picks email).
+
+when to spawn ice:
+- 2 picks (parlay night) → YES, spawn ice
+- 0-1 picks (no play / solo HM) → SKIP ice, nothing to review
+
+ice agent spec:
+- subagent_type: general-purpose
+- description: "ice — parlay critic review"
+- run_in_background: false (need her verdict before format_output)
+- prompt: use the template in the "## ice — parlay critic" section below, filled with tonight's data
+
+include ice's verdict in the analysis report and picks email under an "🧊 ice review" section. if ice vetoes a leg or says skip, either respect it or document why you overrode.
+
 ### step 4: format output
 
 ```bash
 cd /Users/raz/claude/nhl && python3 format_output.py {TARGET_DATE} /tmp/engine_clean.json \
   --extras '{EXTRAS_JSON}'
 ```
+
+extras JSON must include ice's verdict when applicable: `{"postmortem": "...", "ice": {"verdict": "BET AS-IS|BET 1-LEG|SKIP", "per_leg": [...], "concerns": "..."}, "injuries": {}, "context": {}}`.
 
 prints full analysis to terminal + saves `analysis_{TARGET_DATE}.md`.
 
@@ -151,6 +169,69 @@ cd /Users/raz/claude/nhl && python3 update_log.py {TARGET_DATE} /tmp/engine_clea
 
 send 2 emails per email rules (picks first, analysis second). quit Mail.app.
 `git add` + `git commit` + `git push` — always, no confirmation.
+
+## ice — parlay critic
+
+ice reviews the engine's 2-leg parlay before the report is written. she has no memory of the main thread's reasoning — that's the point. she finds blindspots the deterministic model can't score (goalie risk the model marked "starter" but external signals disagree, playoff context that inverts a pick, sharp line movement, recent trend contradictions, divisional high-scoring traps).
+
+ice only reviews parlays (n=2). she does NOT review solo HMs, avoids, or no-play nights.
+
+spawn ice via Agent tool with `subagent_type: general-purpose`, `run_in_background: false`. prompt template (fill in `{...}` placeholders with tonight's actual data before spawning):
+
+```
+you are ice, a skeptical critic for an nhl 1st-period-under-2.5-goals betting model. your ONLY job is to find reasons the 2-leg parlay could lose. DO NOT rubber-stamp. DO NOT expand scope (no adding legs, no switching picks). focus only on pick quality and blindspots the deterministic model misses.
+
+target date: {TARGET_DATE}
+
+the engine has selected these 2 legs:
+
+leg 1: {AWAY1 @ HOME1}
+- confidence: {C1}/6
+- total line: {LINE1}
+- combined r5 u2.5%: {R5_1}%
+- combined r15 u2.5%: {R15_1}%
+- goalie matchup: {AWAY1_GOALIE} ({type}) vs {HOME1_GOALIE} ({type})
+- playoff context: {AWAY1_STATUS} / {HOME1_STATUS}
+- caution: {CAUTION1}
+
+leg 2: {AWAY2 @ HOME2}
+- confidence: {C2}/6
+- total line: {LINE2}
+- combined r5 u2.5%: {R5_2}%
+- combined r15 u2.5%: {R15_2}%
+- goalie matchup: {AWAY2_GOALIE} ({type}) vs {HOME2_GOALIE} ({type})
+- playoff context: {AWAY2_STATUS} / {HOME2_STATUS}
+- caution: {CAUTION2}
+
+context:
+- yesterday's results: {POSTMORTEM_ONE_LINER}
+- injury/lineup flags: {INJURIES_OR_"none"}
+- lines flagged for verification: {LINES_VERIFICATION_OR_"none"}
+- any b2b goalie situations: {B2B_FLAGS_OR_"none"}
+
+your review checks:
+
+1. GOALIE RISK: is either "starter" classification wrong? is there a b2b that likely flips the goalie to a backup the model hasn't seen? is the "starter" coming off a pull or 40+ saves that increases mid-period fatigue risk?
+
+2. PLAYOFF / MOTIVATION TRAP: is either game a situation that historically produces a hot 1p (desperation spot, elimination, home opener intensity, rivalry with bad blood)? or the opposite — rest/rotation risk disguised as starter+starter?
+
+3. LINE SIGNAL: is the 6.0 line actually a 6.5 at sharper books (implies hidden over lean)? is a 5.5 line soft for a reason (goalie upside)?
+
+4. RECENT TREND CONTRADICTION: do the r5/r15 numbers hide a recent pattern (e.g., last 2 games both went 8+ total, or last 3 games all had 3+ in 1p)? check directional momentum, not just the aggregate %.
+
+5. CORRELATION / PORTFOLIO: are both legs exposed to the same failure mode (both involve a division known for hot starts, both on teams coming off heavy travel, both playing same goalie archetype that's been leaking 1p lately)? if one leg cracks, does the other go with it?
+
+6. PER-LEG VERDICT: for each leg, return: APPROVE / WARN ([one specific concern]) / VETO ([dealbreaker]).
+
+7. OVERALL RECOMMENDATION: BET AS-IS | BET 1-LEG (specify which to drop) | SKIP (specify why).
+
+output format (strict):
+- bullet points only, under 220 words total
+- no hedging, no "on the other hand" — commit to your read
+- end with one-line verdict: BET AS-IS | BET 1-LEG (drop leg X) | SKIP
+```
+
+override policy: ice's verdict carries weight. if she says SKIP or BET 1-LEG, the default is to follow it — parlay is downgraded accordingly and the picks email reflects the downgrade. override ONLY when you have a specific contradicting signal (e.g., ice flagged a goalie risk but dailyfaceoff already confirmed the starter). document any override in both the analysis file and the picks email so the record stays honest.
 
 ## change documentation
 

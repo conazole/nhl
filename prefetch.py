@@ -614,6 +614,26 @@ def main():
         teams_needed.add(a)
         teams_needed.add(h)
 
+    # short-circuit on zero games: skip all source fetches to avoid
+    # scraping page chrome into bogus line entries (ESPN HTML returns
+    # junk like NTON@LERS, TTLE@STON 100.0 when no real matchups exist).
+    if not games:
+        progress("no games tonight — skipping goalie/line fetches")
+        result = {
+            "target_date": target_date,
+            "games": [],
+            "goalies": {},
+            "goalies_engine": {},
+            "lines": {},
+            "lines_needing_verification": [],
+            "injuries": {},
+            "errors": errors,
+            "source_counts": {"dfo_goalies": 0, "nhl_goalies": 0, "espn_lines": 0, "pinnacle_lines": 0},
+        }
+        progress(f"prefetch done: 0 goalies, 0 lines, {len(errors)} errors")
+        print(json.dumps(result))
+        return
+
     # fetch all sources in parallel
     progress("fetching all sources in parallel...")
     with ThreadPoolExecutor(max_workers=6) as ex:
