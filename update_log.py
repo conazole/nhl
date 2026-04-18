@@ -144,11 +144,18 @@ def main():
     # (date, game), stash it so we can re-attach after the pick refresh.
     CLOSING_FIELDS = ("closing_line", "line_delta", "line_direction", "closing_ts")
     preserved = {}
+    # opening-line capture: the FIRST /nhl run of the day stores total_line as
+    # the opening. subsequent runs preserve that original total_line and treat
+    # the newly-fetched line as the closing line. lets clv accumulate just by
+    # running /nhl again near puck drop — no separate cron required.
+    prior_opening = {}
     for e in entries:
         if e.get("date") == target_date and "result" not in e:
             carry = {k: e[k] for k in CLOSING_FIELDS if k in e}
             if carry:
                 preserved[e["game"]] = carry
+            if e.get("total_line") is not None:
+                prior_opening[e["game"]] = e["total_line"]
 
     # remove existing entries for target_date that DON'T have results
     # (resolved entries are sacred — never touch them)
@@ -163,26 +170,44 @@ def main():
         "aw_confirmed", "hm_confirmed", "is_playoff", "series_info",
     )
 
+    from datetime import datetime, timezone
+    now_iso = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
     added = 0
     for ne in new_entries:
+        current_line = ne.get("total_line")
+        game = ne["game"]
+        # opening-line preservation: first run of the day stores current line as
+        # total_line. subsequent runs keep that original opening and treat the
+        # newly-fetched line as closing_line with computed delta/direction.
+        opening = prior_opening.get(game, current_line)
+
         entry = {
             "date": target_date,
-            "game": ne["game"],
+            "game": game,
             "pick": "1p u2.5",
             "confidence": ne["confidence"],
             "poisson_pct": ne.get("poisson_pct", 0),
             "base_rate_pct": ne.get("base_rate_pct", 0),
             "combined_recent5_pct": ne.get("combined_recent5_pct", 0),
             "combined_last15_pct": ne.get("combined_last15_pct", 0),
-            "total_line": ne.get("total_line"),
+            "total_line": opening,
             "model": ne.get("model", "v4"),
         }
         for field in PASSTHROUGH:
             if field in ne and ne[field] is not None:
                 entry[field] = ne[field]
-        # re-attach any closing-line fields we captured earlier for this game
-        if entry["game"] in preserved:
-            entry.update(preserved[entry["game"]])
+        # re-attach any closing-line fields captured earlier (e.g., close_line.py)
+        if game in preserved:
+            entry.update(preserved[game])
+        # if this is a re-run and the line has moved, record clv here without
+        # needing a separate close_line.py invocation
+        if current_line is not None and opening is not None and current_line != opening:
+            delta = round(float(current_line) - float(opening), 2)
+            entry["closing_line"] = float(current_line)
+            entry["line_delta"] = delta
+            entry["line_direction"] = "toward_over" if delta > 0 else ("toward_under" if delta < 0 else "flat")
+            entry["closing_ts"] = now_iso
         kept.append(entry)
         added += 1
 
