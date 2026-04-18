@@ -180,15 +180,11 @@ cd /Users/raz/claude/nhl && python3 update_log.py {TARGET_DATE} /tmp/engine_clea
 send 2 emails per email rules (picks first, analysis second). quit Mail.app.
 `git add` + `git commit` + `git push` — always, no confirmation.
 
-**clv capture is automatic, built into step 5.** update_log.py preserves `total_line` (opening) across re-runs and writes `closing_line` + `line_delta` + `line_direction` + `closing_ts` whenever subsequent runs see a different line. no separate invocation needed.
+**clv is transparent.** run `/nhl` as many times as you want in a day — the pipeline records the first observed line as `total_line` (opening) and automatically writes `closing_line` + `line_delta` any time a later run sees a different line. single run, no line movement, nothing gets recorded — that's fine. nothing for you to configure, nothing to remember, no cron required.
 
-workflow patterns:
-- **single /nhl run** (close to puck drop): `total_line` captured at that moment, no clv data for the day. fine.
-- **two /nhl runs** (afternoon picks + evening re-check): first run sets opening, second run auto-captures closing + delta. this is how you get clv without any cron.
+clv interpretation (informational, shown in review.py): for u2.5 bets, line going UP = market pricing more goals = our bet got harder (negative clv). review.py flips the sign so positive clv = market moved toward us.
 
-clv interpretation: for u2.5 bets, line going UP = market pricing more goals = our bet got harder (negative clv). review.py flips the sign so positive clv = market moved toward us.
-
-`close_line.py` still exists as a standalone lightweight option (just re-fetches lines without running the full pipeline), but it's no longer required — /nhl itself covers it.
+`close_line.py` exists as a standalone lightweight "just refresh lines, don't rerun the full pipeline" option — useful if you want to pin a closing line without re-triggering picks/emails/commits.
 
 ### weekly: revalidate + review
 
