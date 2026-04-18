@@ -205,29 +205,66 @@ def format_table(team_abbr, team_data, line_lookup):
 # ── per-game analysis ──
 
 def format_game(m, teams, line_lookup, injuries, context_map):
+    """render a single game as a collapsible <details> block.
+    summary (always visible): matchup · confidence · line · goalie pair · time · playoff tag.
+    expanded: key-numbers grid, team recent-15 tables, combined stats, context, goalie detail."""
     away = m["away"]
     home = m["home"]
     away_l = away.lower()
     home_l = home.lower()
     conf = m["confidence"]
     f = m["factors"]
+    line_val = format_line(m["total_line"])
 
-    out = []
-    out.append(f"## {away_l} @ {home_l} — {tier_label(conf)}")
-    playoff_tag = ""
+    # ── build playoff tag (summary + detail) ──
+    playoff_summary_tag = ""
+    playoff_detail_note = ""
     if m.get("is_playoff"):
         gn = m.get("series_game_num")
-        playoff_tag = f" · 🏆 playoff game {gn}" if gn else " · 🏆 playoff"
+        playoff_summary_tag = f" · 🏆 g{gn}" if gn else " · 🏆"
         if gn == 1:
-            playoff_tag += " (g1 cap — max 3/6)"
-    out.append(f"> {start_time_et(m['start_utc'])} · {format_line(m['total_line'])}{playoff_tag}")
+            playoff_summary_tag += " (capped)"
+            playoff_detail_note = "🏆 playoff game 1 — confidence capped at 3/6 (g1 u2.5 rate: 63.3% last 2 sns, below 73% reg-season baseline)"
+        elif gn:
+            playoff_detail_note = f"🏆 playoff game {gn}"
+
+    # ── summary line (visible when collapsed) ──
+    summary_parts = [
+        f"<strong>{away_l} @ {home_l}</strong>",
+        f"{tier_label(conf)}",
+        f"line {line_val}",
+        f"{f['goalie_pair']}",
+        f"{start_time_et(m['start_utc'])}",
+    ]
+    summary = " · ".join(summary_parts) + playoff_summary_tag
+
+    out = []
+    out.append(f"<details>")
+    out.append(f"<summary>{summary}</summary>")
+    out.append("")
+
+    # ── key numbers block (top of expanded view) ──
+    out.append("### key numbers")
+    out.append("")
+    out.append("| metric | value |")
+    out.append("|---|---|")
+    out.append(f"| confidence | **{conf}/6**  {conf_dots(conf)} |")
+    out.append(f"| total line | **{line_val}** |")
+    out.append(f"| combined r5 | {m['comb_r5']}/10 ({m['comb_r5_pct']}%) |")
+    out.append(f"| combined r15 | {m['comb_r15']}/30 ({m['comb_r15_pct']}%) |")
+    out.append(f"| goalie pair | {f['goalie_pair']} |")
+    out.append("")
+    out.append(f"**factors:** r5 {sign(f['r5'])} · r15 {sign(f['r15'])} · goalie {sign(f['goalie'])} · line {sign(f['line'])}")
+    if playoff_detail_note:
+        out.append("")
+        out.append(f"{playoff_detail_note}")
     out.append("")
 
     # ── away team ──
     at = teams[away]
     venue_a = "road" if at["tonight_ha"] == "a" else "home"
     va_pct = at['venue_u25']/at['venue_total']*100 if at['venue_total'] > 0 else 0.0
-    out.append(f"### {away_l} ({m['aw_goalie']}, {m['aw_goalie_cls']})")
+    out.append(f"### 🏒 {away_l} — {m['aw_goalie']} ({m['aw_goalie_cls']})")
     out.append("")
     out.append(format_table(away, at, line_lookup))
     out.append("")
@@ -238,14 +275,14 @@ def format_game(m, teams, line_lookup, injuries, context_map):
     ht = teams[home]
     venue_h = "home" if ht["tonight_ha"] == "h" else "road"
     vh_pct = ht['venue_u25']/ht['venue_total']*100 if ht['venue_total'] > 0 else 0.0
-    out.append(f"### {home_l} ({m['hm_goalie']}, {m['hm_goalie_cls']})")
+    out.append(f"### 🏒 {home_l} — {m['hm_goalie']} ({m['hm_goalie_cls']})")
     out.append("")
     out.append(format_table(home, ht, line_lookup))
     out.append("")
     out.append(f"> r5: {ht['r5_u25']}/5 ({ht['r5_u25']*20}%) · r15: {ht['r15_u25']}/15 ({ht['r15_u25']/15*100:.0f}%) · {venue_h}: {ht['venue_u25']}/{ht['venue_total']} ({vh_pct:.0f}%) · wavg: {ht['wavg_gf']:.3f} · {ht['sys_class']}")
     out.append("")
 
-    # ── combined stats ──
+    # ── context ──
     if m["h2h"]:
         h2h_parts = [f"{h['total_1p']}g ({h['date'][5:]})" for h in m["h2h"][:3]]
         h2h_str = ", ".join(h2h_parts)
@@ -253,7 +290,6 @@ def format_game(m, teams, line_lookup, injuries, context_map):
         h2h_str = "none in window"
     b2b_str = ", ".join(t.lower() for t in m["b2b_teams"]) if m["b2b_teams"] else "none"
 
-    # playoff context (informational)
     info = m.get("info", {})
     aw_po = info.get("aw_playoff", {})
     hm_po = info.get("hm_playoff", {})
@@ -263,23 +299,14 @@ def format_game(m, teams, line_lookup, injuries, context_map):
             po_parts.append(f"{abbr} {po.get('pts', '?')}pts/{po.get('remaining', '?')}left ({po.get('status', '?')})")
     playoff_str = " · ".join(po_parts) if po_parts else "n/a"
 
-    # goalie info
-    ac = "✓" if m["aw_confirmed"] else "✗"
-    hc = "✓" if m["hm_confirmed"] else "✗"
-    elite_a = " ★" if m.get("aw_elite") else ""
-    elite_h = " ★" if m.get("hm_elite") else ""
-
-    out.append(f"combined r5: {m['comb_r5']}/10 ({m['comb_r5_pct']}%) · r15: {m['comb_r15']}/30 ({m['comb_r15_pct']}%)")
-    parts = [f"h2h: {h2h_str}", f"b2b: {b2b_str}"]
-    out.append(" · ".join(parts))
-    out.append(f"playoff: {playoff_str}")
+    out.append("### context")
+    out.append("")
+    out.append(f"- **h2h:** {h2h_str}")
+    out.append(f"- **b2b:** {b2b_str}")
+    out.append(f"- **playoff:** {playoff_str}")
     caution = playoff_caution(aw_po, hm_po, away_l, home_l)
     if caution:
-        out.append(caution)
-    out.append("")
-    out.append(f"{away_l}: {m['aw_goalie']} ({m['aw_goalie_cls']}, {m['aw_goalie_share']:.0f}%, sv% {m['aw_sv_pct']:.4f}) [{ac}]{elite_a}")
-    out.append(f"{home_l}: {m['hm_goalie']} ({m['hm_goalie_cls']}, {m['hm_goalie_share']:.0f}%, sv% {m['hm_sv_pct']:.4f}) [{hc}]{elite_h}")
-    out.append(f"matchup: {f['goalie_pair']}")
+        out.append(f"- **caution:** {caution.lstrip('⚠ ').strip()}")
 
     # injuries + context (only if present)
     inj_a = injuries.get(away, "")
@@ -288,17 +315,25 @@ def format_game(m, teams, line_lookup, injuries, context_map):
     if inj_a: inj_parts.append(f"{away_l}: {inj_a}")
     if inj_h: inj_parts.append(f"{home_l}: {inj_h}")
     if inj_parts:
-        out.append(f"injuries: {' · '.join(inj_parts)}")
+        out.append(f"- **injuries:** {' · '.join(inj_parts)}")
     ctx = context_map.get(f"{away}@{home}", "")
     if ctx:
-        out.append(f"context: {ctx}")
+        out.append(f"- **notes:** {ctx}")
     out.append("")
 
-    # ── confidence ──
-    out.append(f"{conf}/6 {conf_dots(conf)}")
-    out.append(f"r5:{sign(f['r5'])} · r15:{sign(f['r15'])} · goalie:{sign(f['goalie'])} ({f['goalie_pair']}) · line:{sign(f['line'])}")
+    # ── goalie detail ──
+    ac = "✓ confirmed" if m["aw_confirmed"] else "✗ unconfirmed"
+    hc = "✓ confirmed" if m["hm_confirmed"] else "✗ unconfirmed"
+    elite_a = " ★" if m.get("aw_elite") else ""
+    elite_h = " ★" if m.get("hm_elite") else ""
+
+    out.append("### goalies")
     out.append("")
-    out.append("---")
+    out.append(f"- **{away_l}:** {m['aw_goalie']}{elite_a} — {m['aw_goalie_cls']} ({m['aw_goalie_share']:.0f}% starts, sv% {m['aw_sv_pct']:.4f}) · {ac}")
+    out.append(f"- **{home_l}:** {m['hm_goalie']}{elite_h} — {m['hm_goalie_cls']} ({m['hm_goalie_share']:.0f}% starts, sv% {m['hm_sv_pct']:.4f}) · {hc}")
+    out.append("")
+
+    out.append("</details>")
     out.append("")
     return out
 
@@ -344,13 +379,22 @@ def format_recommendation(matchups, record):
     if hms:
         out.append("### honorable mentions")
         out.append("")
+        out.append("| matchup | conf | line | goalies | playoff |")
+        out.append("|---|---|---|---|---|")
         for m in hms:
-            out.append(f"- {m['away'].lower()} @ {m['home'].lower()} — {m['confidence']}/6")
+            f = m["factors"]
+            po_tag = ""
+            if m.get("is_playoff"):
+                gn = m.get("series_game_num")
+                po_tag = f"🏆 g{gn}" + (" (cap)" if gn == 1 else "") if gn else "🏆"
+            out.append(f"| {m['away'].lower()} @ {m['home'].lower()} | {m['confidence']}/6 | {format_line(m['total_line'])} | {f['goalie_pair']} | {po_tag} |")
         out.append("")
 
     if avoids:
         out.append("### avoid")
         out.append("")
+        out.append("| matchup | conf | line | reason |")
+        out.append("|---|---|---|---|")
         for m in avoids:
             f = m["factors"]
             reasons = []
@@ -358,7 +402,7 @@ def format_recommendation(matchups, record):
             if f["line"] < 0: reasons.append(f"{format_line(m['total_line'])} line")
             if f["r5"] == 0: reasons.append(f"r5 {m['comb_r5_pct']:.0f}%")
             reason_str = ", ".join(reasons) if reasons else "low factors"
-            out.append(f"- {m['away'].lower()} @ {m['home'].lower()} — {m['confidence']}/6 ({reason_str})")
+            out.append(f"| {m['away'].lower()} @ {m['home'].lower()} | {m['confidence']}/6 | {format_line(m['total_line'])} | {reason_str} |")
         out.append("")
 
     out.append(f"season: {record['parlay_w']}-{record['parlay_l']} parlays · {record['leg_w']}-{record['leg_l']} legs")
@@ -506,33 +550,12 @@ def main():
         out.append("")
 
     # ── per-game analysis ──
+    out.append("## per-game analysis")
+    out.append("")
+    out.append("_click any game to expand_")
+    out.append("")
     for m in data["matchups"]:
         out.extend(format_game(m, data["teams"], line_lookup, injuries, context_map))
-
-    # ── summary at bottom ──
-    hms = [m for m in data["matchups"] if 2 <= m["confidence"] <= 3]
-    avoids = [m for m in data["matchups"] if m["confidence"] < 2]
-
-    out.append("## summary")
-    out.append("")
-    if hms:
-        out.append("### honorable mentions")
-        out.append("")
-        for m in hms:
-            out.append(f"- {m['away'].lower()} @ {m['home'].lower()} — {m['confidence']}/6")
-        out.append("")
-    if avoids:
-        out.append("### avoid")
-        out.append("")
-        for m in avoids:
-            f = m["factors"]
-            reasons = []
-            if f["goalie"] < 0: reasons.append(f["goalie_pair"])
-            if f["line"] < 0: reasons.append(f"{format_line(m['total_line'])} line")
-            if f["r5"] == 0: reasons.append(f"r5 {m['comb_r5_pct']:.0f}%")
-            reason_str = ", ".join(reasons) if reasons else "low factors"
-            out.append(f"- {m['away'].lower()} @ {m['home'].lower()} — {m['confidence']}/6 ({reason_str})")
-        out.append("")
 
     full_output = "\n".join(out)
     print(full_output)
