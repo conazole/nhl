@@ -136,7 +136,9 @@ extract clean JSON (skip log lines): `tail -n +{first_json_line} > /tmp/engine_c
 
 ### step 3b: spawn ice — parlay critic (parlay nights only)
 
-if the engine returned 2 picks (n=2 at ≥4/6), ALWAYS spawn ice (via the `Agent` tool) before step 4. ice is a skeptical critic with fresh context — her job is to find reasons the parlay could lose that the deterministic model can't price. RESPECT her verdict unless you have a specific reason to override (document it in the analysis + picks email).
+if the engine returned 2 picks (n=2 at ≥4/6), ALWAYS spawn ice (via the `Agent` tool) before step 4. ice is a skeptical critic with fresh context — her job is to surface reasons the parlay could lose that the deterministic model can't price.
+
+**informational only.** ice's verdict is flagged as a concern in the analysis + picks email — it does NOT downgrade, drop, or skip the parlay. the v4 model is deterministic and validated; its picks stand. ice exists so we see the blindspots, track them, and later assess whether her calls correlate with outcomes.
 
 when to spawn ice:
 - 2 picks (parlay night) → YES, spawn ice
@@ -148,7 +150,7 @@ ice agent spec:
 - run_in_background: false (need her verdict before format_output)
 - prompt: use the template in the "## ice — parlay critic" section below, filled with tonight's data
 
-include ice's verdict in the analysis report and picks email under an "🧊 ice review" section. if ice vetoes a leg or says skip, either respect it or document why you overrode.
+render ice's verdict in the analysis report and picks email under an "🧊 ice review" section. the parlay text itself stays unchanged — ice is a warning light, not a kill switch.
 
 ### step 4: format output
 
@@ -231,7 +233,7 @@ output format (strict):
 - end with one-line verdict: BET AS-IS | BET 1-LEG (drop leg X) | SKIP
 ```
 
-override policy: ice's verdict carries weight. if she says SKIP or BET 1-LEG, the default is to follow it — parlay is downgraded accordingly and the picks email reflects the downgrade. override ONLY when you have a specific contradicting signal (e.g., ice flagged a goalie risk but dailyfaceoff already confirmed the starter). document any override in both the analysis file and the picks email so the record stays honest.
+action policy: **informational only.** ice's output is flagged as a concern in the analysis + picks email. it does NOT downgrade, drop, or skip the parlay. the v4 model is deterministic and validated — its picks stand. ice exists to surface blindspots so we can see them, track them, and later evaluate whether her calls correlate with outcomes. treat her verdict as a warning light, not a kill switch.
 
 ## change documentation
 
