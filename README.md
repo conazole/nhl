@@ -112,6 +112,8 @@ outputs: confidence calibration, tier accuracy, line factor impact, 1p total dis
 git clone <repo-url> && cd nhl
 # symlink memory so claude code finds it
 ln -s "$(pwd)/.claude/memory" ~/.claude/projects/-Users-raz-Library-Mobile-Documents-com-apple-CloudDocs-claude-nhl/memory
+# symlink ice agent spec into user-scope agents dir
+mkdir -p ~/.claude/agents && ln -s "$(pwd)/.claude/agents/ice.md" ~/.claude/agents/ice.md
 ```
 
 ## stack
