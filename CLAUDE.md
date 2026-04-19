@@ -142,23 +142,23 @@ cd /Users/raz/claude/nhl && python3 run_analysis.py {TARGET_DATE} \
 
 extract clean JSON (skip log lines): `tail -n +{first_json_line} > /tmp/engine_clean.json`
 
-### step 3b: spawn ice — parlay critic (parlay nights only)
+### step 3b: spawn ice — independent critic (picks OR hm nights)
 
-if the engine returned 2 picks (n=2 at ≥4/6), ALWAYS spawn ice (via the `Agent` tool) before step 4. ice is a skeptical critic with fresh context — her job is to surface reasons the parlay could lose that the deterministic model can't price.
+ice is a skeptical, research-driven critic with fresh context. her full spec lives at `~/.claude/agents/ice.md` — she reads it on every invocation, runs mandatory live research (goalies, lineups, refs, line movement, 1p trends, playoff narrative), then returns a strict verdict with cited sources.
 
-**informational only.** ice's verdict is flagged as a concern in the analysis + picks email — it does NOT downgrade, drop, or skip the parlay. the v4 model is deterministic and validated; its picks stand. ice exists so we see the blindspots, track them, and later assess whether her calls correlate with outcomes.
+**informational only.** ice's verdict is flagged as a concern in the analysis + picks email — it does NOT downgrade, drop, or skip anything. the v4.2 model is deterministic and validated; its picks stand. ice exists so we see the blindspots, track them, and later assess whether her calls correlate with outcomes.
 
 when to spawn ice:
-- 2 picks (parlay night) → YES, spawn ice
-- 0-1 picks (no play / solo HM) → SKIP ice, nothing to review
+- ≥1 pick OR ≥1 honorable mention → YES, spawn ice
+- no picks AND no honorable mentions (genuine "no play") → SKIP ice, nothing to review
 
 ice agent spec:
-- subagent_type: general-purpose
-- description: "ice — parlay critic review"
+- subagent_type: general-purpose (custom subagent_types aren't live mid-session; general-purpose is the vehicle — ice.md instructs her to read her own spec first)
+- description: "ice — 1p u2.5 critic review"
 - run_in_background: false (need her verdict before format_output)
-- prompt: use the template in the "## ice — parlay critic" section below, filled with tonight's data
+- prompt: use the template in the "## ice — critic prompt template" section below, filled with tonight's data
 
-render ice's verdict in the analysis report and picks email under an "🧊 ice review" section. the parlay text itself stays unchanged — ice is a warning light, not a kill switch.
+render ice's verdict in the analysis report and picks email under an "🧊 ice review" section. the pick / hm text itself stays unchanged — ice is a warning light, not a kill switch.
 
 ### step 4: format output
 
@@ -196,68 +196,49 @@ cd /Users/raz/claude/nhl && python3 research/revalidate.py
 review.py: per-factor hit rates, CLV trend, base rate drift, weekly trend.
 revalidate.py: compares recent 100 games to v4 baselines, flags >5pp drift.
 
-## ice — parlay critic
+## ice — critic agent spec
 
-ice reviews the engine's 2-leg parlay before the report is written. she has no memory of the main thread's reasoning — that's the point. she finds blindspots the deterministic model can't score (goalie risk the model marked "starter" but external signals disagree, playoff context that inverts a pick, sharp line movement, recent trend contradictions, divisional high-scoring traps).
+the full ice spec lives at `~/.claude/agents/ice.md`. she's a research-driven critic with `WebSearch`, `WebFetch`, `Read` tools and a built-in knowledge base (nhl 1p u2.5 edge tables from our audits + external reference rates). on every invocation she reads her own spec first, then runs mandatory live research per leg:
 
-ice only reviews parlays (n=2). she does NOT review solo HMs, avoids, or no-play nights.
+1. **goalie confirmation** (dailyfaceoff + beat-writer websearch)
+2. **last-24hr lineup / injury** (espn injuries + team beat writers)
+3. **referee crew / pp exposure** (scoutingtherefs)
+4. **sharp line movement** (action network + pinnacle-direction websearch)
+5. **1p-specific recent trend** (naturalstattrick + nhl api per-period)
+6. **playoff series context** (nhl api + series-news websearch) — playoff only
 
-spawn ice via Agent tool with `subagent_type: general-purpose`, `run_in_background: false`. prompt template (fill in `{...}` placeholders with tonight's actual data before spawning):
+she returns a strict per-leg verdict (approve / warn / veto) + overall parlay recommendation (bet as-is / bet 1-leg / skip), ≤300 words, every claim cited with a url. no fabrication — if a source is blocked she names it.
+
+spawn ice via Agent tool with `subagent_type: general-purpose`, `run_in_background: false`. custom subagent_types aren't live mid-session; general-purpose is the vehicle — ice.md instructs her to read her own spec first, then apply it.
+
+### ice — critic prompt template
+
+fill in `{...}` placeholders with tonight's actual data before spawning. for hm-only nights, list the hms under "honorable mentions" and omit the "picks" block (or vice versa — whichever applies).
 
 ```
-you are ice, a skeptical critic for an nhl 1st-period-under-2.5-goals betting model. your ONLY job is to find reasons the 2-leg parlay could lose. DO NOT rubber-stamp. DO NOT expand scope (no adding legs, no switching picks). focus only on pick quality and blindspots the deterministic model misses.
+you are ice. the full spec is at ~/.claude/agents/ice.md — read that file FIRST to understand your role, mandatory research playbook, edge tables, checklist, and strict output format. then apply it to tonight's slate below. be skeptical — do not rubber-stamp.
 
 target date: {TARGET_DATE}
+phase: {regular season | playoff}
 
-the engine has selected these 2 legs:
+picks (≥4/6 confidence, skipped if none):
+- leg 1: {AWAY1 @ HOME1} | conf {C1}/6 | line {LINE1} | r5 {R5_1}% | r15 {R15_1}% | goalies {AWAY1_GOALIE} ({type}) vs {HOME1_GOALIE} ({type}) | playoff ctx {AWAY1_STATUS} / {HOME1_STATUS} | caution {CAUTION1}
+- leg 2 (if applicable): {same structure}
 
-leg 1: {AWAY1 @ HOME1}
-- confidence: {C1}/6
-- total line: {LINE1}
-- combined r5 u2.5%: {R5_1}%
-- combined r15 u2.5%: {R15_1}%
-- goalie matchup: {AWAY1_GOALIE} ({type}) vs {HOME1_GOALIE} ({type})
-- playoff context: {AWAY1_STATUS} / {HOME1_STATUS}
-- caution: {CAUTION1}
+honorable mentions (2-3/6, skipped if none):
+- {AWAY @ HOME} | conf {C}/6 | line {LINE} | r5 {R5}% | r15 {R15}% | goalies {AWAY_GOALIE} ({type}) vs {HOME_GOALIE} ({type}) | playoff ctx {AWAY_STATUS} / {HOME_STATUS} | caution {CAUTION}
+- ... (repeat for each hm)
 
-leg 2: {AWAY2 @ HOME2}
-- confidence: {C2}/6
-- total line: {LINE2}
-- combined r5 u2.5%: {R5_2}%
-- combined r15 u2.5%: {R15_2}%
-- goalie matchup: {AWAY2_GOALIE} ({type}) vs {HOME2_GOALIE} ({type})
-- playoff context: {AWAY2_STATUS} / {HOME2_STATUS}
-- caution: {CAUTION2}
-
-context:
-- yesterday's results: {POSTMORTEM_ONE_LINER}
-- injury/lineup flags: {INJURIES_OR_"none"}
+slate context:
+- yesterday's postmortem (one line): {POSTMORTEM_ONE_LINER}
+- prefetch injury flags: {INJURIES_OR_"none"}
 - lines flagged for verification: {LINES_VERIFICATION_OR_"none"}
-- any b2b goalie situations: {B2B_FLAGS_OR_"none"}
+- b2b goalie situations: {B2B_FLAGS_OR_"none"}
 
-your review checks:
-
-1. GOALIE RISK: is either "starter" classification wrong? is there a b2b that likely flips the goalie to a backup the model hasn't seen? is the "starter" coming off a pull or 40+ saves that increases mid-period fatigue risk?
-
-2. PLAYOFF / MOTIVATION TRAP: is either game a situation that historically produces a hot 1p (desperation spot, elimination, home opener intensity, rivalry with bad blood)? or the opposite — rest/rotation risk disguised as starter+starter?
-
-3. LINE SIGNAL: is the 6.0 line actually a 6.5 at sharper books (implies hidden over lean)? is a 5.5 line soft for a reason (goalie upside)?
-
-4. RECENT TREND CONTRADICTION: do the r5/r15 numbers hide a recent pattern (e.g., last 2 games both went 8+ total, or last 3 games all had 3+ in 1p)? check directional momentum, not just the aggregate %.
-
-5. CORRELATION / PORTFOLIO: are both legs exposed to the same failure mode (both involve a division known for hot starts, both on teams coming off heavy travel, both playing same goalie archetype that's been leaking 1p lately)? if one leg cracks, does the other go with it?
-
-6. PER-LEG VERDICT: for each leg, return: APPROVE / WARN ([one specific concern]) / VETO ([dealbreaker]).
-
-7. OVERALL RECOMMENDATION: BET AS-IS | BET 1-LEG (specify which to drop) | SKIP (specify why).
-
-output format (strict):
-- bullet points only, under 220 words total
-- no hedging, no "on the other hand" — commit to your read
-- end with one-line verdict: BET AS-IS | BET 1-LEG (drop leg X) | SKIP
+run your mandatory research per ~/.claude/agents/ice.md (goalies, lineups, refs, line movement, 1p trends, playoff narrative). return the strict verdict format. cite every non-obvious claim.
 ```
 
-action policy: **informational only.** ice's output is flagged as a concern in the analysis + picks email. it does NOT downgrade, drop, or skip the parlay. the v4 model is deterministic and validated — its picks stand. ice exists to surface blindspots so we can see them, track them, and later evaluate whether her calls correlate with outcomes. treat her verdict as a warning light, not a kill switch.
+action policy: **informational only.** ice's output is flagged as a concern in the analysis + picks email. it does NOT downgrade, drop, or skip any pick or hm. the v4.2 model is deterministic and validated — its picks stand. ice exists to surface blindspots so we can see them, track them, and later evaluate whether her calls correlate with outcomes. treat her verdict as a warning light, not a kill switch.
 
 ## change documentation
 
