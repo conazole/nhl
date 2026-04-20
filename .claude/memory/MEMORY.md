@@ -21,6 +21,7 @@ all rules live in CLAUDE.md (single source of truth). memory files below capture
 - [flag script errors immediately — never silently work around](feedback_flag_errors.md)
 - [run review.py weekly + "what we learned" report](feedback_weekly_review.md)
 - [playoff context + cautions displayed per game, never scored](feedback_playoff_context_display.md)
+- [r5 carries late-reg-season dilution noise for early playoff picks — weight r15 heavier when they disagree](feedback_r5_playoff_noise.md)
 
 ## feedback (unlisted)
 - [betting discipline — parlay sizing, bankroll](feedback_betting_discipline.md)
