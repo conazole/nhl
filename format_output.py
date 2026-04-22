@@ -545,9 +545,11 @@ def main():
             out.append("")
         per_leg = ice.get("per_leg") or []
         for leg in per_leg:
-            game = leg.get("game", "").lower()
-            call = leg.get("call", "").lower()
-            note = leg.get("note", "")
+            game = (leg.get("game") or leg.get("leg") or "").lower()
+            call = (leg.get("call") or leg.get("verdict") or "").lower()
+            note = leg.get("note") or leg.get("notes") or ""
+            if not (game or call or note):
+                continue
             out.append(f"- {game} — **{call}**{(' · ' + note) if note else ''}")
         if per_leg:
             out.append("")
