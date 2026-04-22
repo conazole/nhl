@@ -57,12 +57,14 @@ v4 core validated on 1149 games (full 2025-26 season with pre-game lines). v4.1 
 
 ## email rules
 
-- two emails per run to `bk.conazole@icloud.com` via osascript.
-- email 1 (picks summary): subject "nhl 1p u2.5 — {date}". concise, phone-readable. parlay + 1-2 sentence reason per pick + season record + honorable mentions. under 20 lines, no tables.
-- email 2 (full analysis): subject "nhl 1p u2.5 analysis — {date}". mobile-optimized — NO tables. u2.5 streaks (`✓✓✓✗✓  ✗✓✗✓✗  ✓✓✓✓✓`, grouped in 5s). lines under 40 chars. all lowercase text, including section labels. postmortem at full depth. key stats per game.
-- u2.5 column: ✅/❌ in analysis file, plain ✓/✗ in emails.
-- send picks email first, analysis email second. quit Mail.app after both.
-- both emails sent EVERY run — first run, re-run, doesn't matter. re-runs reflect updated picks.
+**emails are DISABLED (apr 22 2026).** skip the email step entirely — do not send picks email, do not send analysis email, do not invoke osascript, do not quit Mail.app. terminal output + saved `analysis_{date}.md` file are the only deliverables. specs below kept for reference; will be re-enabled later.
+
+- ~~two emails per run to `bk.conazole@icloud.com` via osascript.~~
+- ~~email 1 (picks summary): subject "nhl 1p u2.5 — {date}". concise, phone-readable. parlay + 1-2 sentence reason per pick + season record + honorable mentions. under 20 lines, no tables.~~
+- ~~email 2 (full analysis): subject "nhl 1p u2.5 analysis — {date}". mobile-optimized — NO tables. u2.5 streaks (`✓✓✓✗✓  ✗✓✗✓✗  ✓✓✓✓✓`, grouped in 5s). lines under 40 chars. all lowercase text, including section labels. postmortem at full depth. key stats per game.~~
+- ~~u2.5 column: ✅/❌ in analysis file, plain ✓/✗ in emails.~~
+- ~~send picks email first, analysis email second. quit Mail.app after both.~~
+- ~~both emails sent EVERY run — first run, re-run, doesn't matter. re-runs reflect updated picks.~~
 
 ## postmortem rules
 
@@ -171,13 +173,13 @@ extras JSON must include ice's verdict when applicable: `{"postmortem": "...", "
 
 prints full analysis to terminal + saves `analysis_{TARGET_DATE}.md`.
 
-### step 5: log + emails + commit
+### step 5: log + commit
 
 ```bash
 cd /Users/raz/claude/nhl && python3 update_log.py {TARGET_DATE} /tmp/engine_clean.json
 ```
 
-send 2 emails per email rules (picks first, analysis second). quit Mail.app.
+~~send 2 emails per email rules (picks first, analysis second). quit Mail.app.~~ **(emails disabled apr 22 2026 — skip entirely.)**
 `git add` + `git commit` + `git push` — always, no confirmation.
 
 **clv is transparent.** run `/nhl` as many times as you want in a day — the pipeline records the first observed line as `total_line` (opening) and automatically writes `closing_line` + `line_delta` any time a later run sees a different line. single run, no line movement, nothing gets recorded — that's fine. nothing for you to configure, nothing to remember, no cron required.
