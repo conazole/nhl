@@ -79,6 +79,22 @@ def playoff_caution(aw_po, hm_po, aw_label, hm_label):
     return f"⚠ {other_label} eliminated — may be loose/unmotivated, variance risk"
 
 
+def playoff_tag(m, leading_sep=True):
+    """compact playoff tag: '🏆 g4 · col 3-0 lak' or '🏆 g1 (capped)'. empty for non-playoff."""
+    if not m.get("is_playoff"):
+        return ""
+    gn = m.get("series_game_num")
+    si = m.get("series_info") or {}
+    top, bot = si.get("top_seed"), si.get("bottom_seed")
+    top_w, bot_w = si.get("top_wins", 0), si.get("bottom_wins", 0)
+    base = f"🏆 g{gn}" if gn else "🏆"
+    if gn == 1:
+        base += " (capped)"
+    elif gn and top and bot and (top_w or bot_w):
+        base += f" · {top.lower()} {top_w}-{bot_w} {bot.lower()}"
+    return (" · " + base) if leading_sep else base
+
+
 # ── line lookup from picks_log ──
 
 def build_line_lookup(entries):
@@ -217,13 +233,11 @@ def format_game(m, teams, line_lookup, injuries, context_map):
     line_val = format_line(m["total_line"])
 
     # ── build playoff tag (summary + detail) ──
-    playoff_summary_tag = ""
+    playoff_summary_tag = playoff_tag(m, leading_sep=True)
     playoff_detail_note = ""
     if m.get("is_playoff"):
         gn = m.get("series_game_num")
-        playoff_summary_tag = f" · 🏆 g{gn}" if gn else " · 🏆"
         if gn == 1:
-            playoff_summary_tag += " (capped)"
             playoff_detail_note = "🏆 playoff game 1 — confidence capped at 3/6 (g1 u2.5 rate: 63.3% last 2 sns, below 73% reg-season baseline)"
         elif gn:
             playoff_detail_note = f"🏆 playoff game {gn}"
@@ -369,7 +383,7 @@ def format_recommendation(matchups, record):
             a, h = p["away"].lower(), p["home"].lower()
             f = p["factors"]
             out.append(f"### {a} @ {h} ({p['confidence']}/6)")
-            out.append(f"> {start_time_et(p['start_utc'])} · {format_line(p['total_line'])} · {f['goalie_pair']}")
+            out.append(f"> {start_time_et(p['start_utc'])} · {format_line(p['total_line'])} · {f['goalie_pair']}{playoff_tag(p, leading_sep=True)}")
             out.append(f">")
             out.append(f"> r5:{sign(f['r5'])} · r15:{sign(f['r15'])} · goalie:{sign(f['goalie'])} · line:{sign(f['line'])}")
             out.append("")
@@ -397,10 +411,7 @@ def format_recommendation(matchups, record):
         out.append("|---|---|---|---|---|")
         for m in hms:
             f = m["factors"]
-            po_tag = ""
-            if m.get("is_playoff"):
-                gn = m.get("series_game_num")
-                po_tag = f"🏆 g{gn}" + (" (cap)" if gn == 1 else "") if gn else "🏆"
+            po_tag = playoff_tag(m, leading_sep=False)
             out.append(f"| {m['away'].lower()} @ {m['home'].lower()} | {m['confidence']}/6 | {format_line(m['total_line'])} | {f['goalie_pair']} | {po_tag} |")
         out.append("")
 
