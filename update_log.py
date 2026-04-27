@@ -96,11 +96,19 @@ def entries_from_engine(data):
             entry["tier"] = "honorable_mention"
         entries.append(entry)
 
-    # solo qualifier rule: parlay requires n>=2 picks at >=4/6.
-    # if exactly one game clears >=4, it becomes an honorable mention, not a pick.
+    # parlay is always 2-leg, top 2 by (confidence, r5%).
+    # n==1: solo qualifier becomes HM (no parlay).
+    # n>=3: only top 2 stay as picks (tier=null); the rest become HMs.
     qualifiers = [e for e in entries if e["confidence"] >= 4]
     if len(qualifiers) == 1:
         qualifiers[0]["tier"] = "honorable_mention"
+    elif len(qualifiers) >= 3:
+        qualifiers.sort(
+            key=lambda e: (e["confidence"], e.get("combined_recent5_pct", 0)),
+            reverse=True,
+        )
+        for q in qualifiers[2:]:
+            q["tier"] = "honorable_mention"
 
     return entries
 
