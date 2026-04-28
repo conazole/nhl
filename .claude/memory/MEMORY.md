@@ -32,3 +32,4 @@ all rules live in CLAUDE.md (single source of truth). memory files below capture
 ## project
 - [v4 model details — line factor, backtest, validation data](project_v4_model.md)
 - [v4.1: backup+starter → +1, split from backup+tandem (77.4%)](project_v41_backup_split.md)
+- [playoff model research backlog — h2h tiebreak, series-state factor (do not implement without go-ahead)](project_playoff_model_research.md)
