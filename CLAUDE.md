@@ -146,21 +146,7 @@ extract clean JSON (skip log lines): `tail -n +{first_json_line} > /tmp/engine_c
 
 ### step 3b: spawn ice — independent critic (picks OR hm nights)
 
-ice is a skeptical, research-driven critic with fresh context. her full spec lives at `~/.claude/agents/ice.md` — she reads it on every invocation, runs mandatory live research (goalies, lineups, refs, line movement, 1p trends, playoff narrative), then returns a strict verdict with cited sources.
-
-**informational only.** ice's verdict is flagged as a concern in the analysis + picks email — it does NOT downgrade, drop, or skip anything. the v4.2 model is deterministic and validated; its picks stand. ice exists so we see the blindspots, track them, and later assess whether her calls correlate with outcomes.
-
-when to spawn ice:
-- ≥1 pick OR ≥1 honorable mention → YES, spawn ice
-- no picks AND no honorable mentions (genuine "no play") → SKIP ice, nothing to review
-
-ice agent spec:
-- subagent_type: general-purpose (custom subagent_types aren't live mid-session; general-purpose is the vehicle — ice.md instructs her to read her own spec first)
-- description: "ice — 1p u2.5 critic review"
-- run_in_background: false (need her verdict before format_output)
-- prompt: use the template in the "## ice — critic prompt template" section below, filled with tonight's data
-
-render ice's verdict in the analysis report and picks email under an "🧊 ice review" section. the pick / hm text itself stays unchanged — ice is a warning light, not a kill switch.
+**ice is DISABLED (may 16 2026).** skip this step entirely — do not spawn the ice agent, do not include ice in extras JSON, do not render an "🧊 ice review" section in the analysis. go directly from step 3 (engine) to step 4 (format output). spec sections below kept for reference; will be re-enabled later.
 
 ### step 4: format output
 
@@ -169,7 +155,7 @@ cd /Users/raz/claude/nhl && python3 format_output.py {TARGET_DATE} /tmp/engine_c
   --extras '{EXTRAS_JSON}'
 ```
 
-extras JSON must include ice's verdict when applicable: `{"postmortem": "...", "ice": {"verdict": "BET AS-IS|BET 1-LEG|SKIP", "per_leg": [...], "concerns": "..."}, "injuries": {}, "context": {}}`.
+extras JSON: `{"postmortem": "...", "injuries": {}, "context": {}}`. **ice key is NOT required (ice disabled may 16 2026).**
 
 prints full analysis to terminal + saves `analysis_{TARGET_DATE}.md`.
 
@@ -198,7 +184,9 @@ cd /Users/raz/claude/nhl && python3 research/revalidate.py
 review.py: per-factor hit rates, CLV trend, base rate drift, weekly trend.
 revalidate.py: compares recent 100 games to v4 baselines, flags >5pp drift.
 
-## ice — critic agent spec
+## ice — critic agent spec (DISABLED may 16 2026 — kept for reference)
+
+**ice is currently disabled. do not spawn the ice agent in any /nhl run.** the sections below describe how ice worked when active, kept here so we can re-enable cleanly later.
 
 the full ice spec lives at `~/.claude/agents/ice.md`. she's a research-driven critic with `WebSearch`, `WebFetch`, `Read` tools and a built-in knowledge base (nhl 1p u2.5 edge tables from our audits + external reference rates). on every invocation she reads her own spec first, then runs mandatory live research per leg:
 
