@@ -166,6 +166,14 @@ def format_postmortem(entries, yesterday, postmortem_text):
     if not yest:
         out.append("no entries to resolve.")
         out.append("")
+        # still render postmortem text — covers dangling resolutions from
+        # >1 day back (e.g. an empty "yesterday" between a game and this run)
+        if postmortem_text:
+            out.append("### post-mortem")
+            out.append("")
+            for line in postmortem_text.strip().split("\n"):
+                out.append(line)
+            out.append("")
         return out
 
     # picks
