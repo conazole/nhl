@@ -393,12 +393,15 @@ def walk_scores(target_date, teams_needed, games_tonight):
 # ============================================================
 
 def fetch_game_details(gid):
-    """fetch boxscore + play-by-play for one game (with cache)."""
+    """fetch boxscore + play-by-play for one game (with cache).
+    only fully-successful fetches are cached — a transient api failure must
+    not permanently poison the cache with '?' goalies / zeroed shots."""
     cached = cache_get("games", str(gid))
     if cached:
         return cached
 
     result = {"game_id": gid}
+    box_ok = pbp_ok = True
 
     # --- boxscore ---
     try:
@@ -413,6 +416,7 @@ def fetch_game_details(gid):
                     best_name, best_toi = nm, toi_sec
             result[f"{side}_goalie"] = best_name
     except Exception:
+        box_ok = False
         result["awayTeam_goalie"] = "?"
         result["homeTeam_goalie"] = "?"
 
@@ -443,11 +447,15 @@ def fetch_game_details(gid):
                        "away_shots": as_, "home_shots": hs,
                        "away_pen": ap, "home_pen": hp})
     except Exception:
+        pbp_ok = False
         result.update({"pbp_away": "", "pbp_home": "",
                        "away_shots": 0, "home_shots": 0,
                        "away_pen": 0, "home_pen": 0})
 
-    cache_put("games", str(gid), result)
+    if box_ok and pbp_ok:
+        cache_put("games", str(gid), result)
+    else:
+        progress(f"  game {gid}: fetch incomplete (box={box_ok} pbp={pbp_ok}) — not cached")
     return result
 
 
@@ -705,6 +713,26 @@ def compute_team_metrics(teams_needed, games_tonight, team_games,
 # compute: per-matchup analysis + confidence
 # ============================================================
 
+def combined_u25(a_games, b_games):
+    """combined u2.5 hits over the UNION of two teams' recent games.
+    games the two teams played against each other appear in both windows
+    with the same outcome — counting them twice (the pre-jun-2026 behavior)
+    double-weights shared games and overstates the sample. deep in a playoff
+    series most of the window is shared, so 8 distinct games were being
+    dressed up as 10. returns (u25_hits, n_distinct, n_shared)."""
+    seen = {}
+    for g in a_games:
+        seen[g["game_id"]] = g["u25"]
+    shared = 0
+    for g in b_games:
+        if g["game_id"] in seen:
+            shared += 1
+        else:
+            seen[g["game_id"]] = g["u25"]
+    hits = sum(1 for v in seen.values() if v)
+    return hits, len(seen), shared
+
+
 def compute_matchups(games_tonight, team_metrics, h2h_data,
                      league_avg_xga, base_rate, tonight_goalies,
                      season_goalie_stats=None, elite_goalies=None,
@@ -730,11 +758,11 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
         if not am or not hm:
             continue
 
-        # combined stats
-        comb_r5 = am["r5_u25"] + hm["r5_u25"]
-        comb_r5_pct = comb_r5 / 10 * 100
-        comb_r15 = am["r15_u25"] + hm["r15_u25"]
-        comb_r15_n = len(am["games"]) + len(hm["games"])
+        # combined stats — de-duped union of both teams' windows (shared
+        # games count once; see combined_u25 docstring)
+        comb_r5, comb_r5_n, r5_shared = combined_u25(am["games"][:5], hm["games"][:5])
+        comb_r5_pct = comb_r5 / comb_r5_n * 100 if comb_r5_n > 0 else 0
+        comb_r15, comb_r15_n, r15_shared = combined_u25(am["games"], hm["games"])
         comb_r15_pct = comb_r15 / comb_r15_n * 100 if comb_r15_n > 0 else 0
 
         # h2h
@@ -891,6 +919,14 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
             total_conf = min(total_conf, 3)
             total_conf_projected = min(total_conf_projected, 3)
 
+        # fail-closed line gate (jun 12 2026): a game with no sourced line can
+        # never be a pick. a true-6.5 game with a missed line would otherwise
+        # dodge its -1 and could sneak to 4/6. wrong line = wrong gate decision.
+        line_missing = total_line is None
+        if line_missing:
+            total_conf = min(total_conf, 3)
+            total_conf_projected = min(total_conf_projected, 3)
+
         # informational factors (not in confidence, shown for context)
         sys_map = {"structured": 1, "moderate": 0, "volatile": -1}
         sys_sum = sys_map.get(am["sys_class"], 0) + sys_map.get(hm["sys_class"], 0)
@@ -898,8 +934,10 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
 
         matchups.append({
             "away": away, "home": home,
-            "comb_r5": comb_r5, "comb_r5_pct": round(comb_r5_pct, 1),
-            "comb_r15": comb_r15, "comb_r15_pct": round(comb_r15_pct, 1),
+            "comb_r5": comb_r5, "comb_r5_n": comb_r5_n,
+            "comb_r5_pct": round(comb_r5_pct, 1), "r5_shared": r5_shared,
+            "comb_r15": comb_r15, "comb_r15_n": comb_r15_n,
+            "comb_r15_pct": round(comb_r15_pct, 1), "r15_shared": r15_shared,
             "h2h": h2h_games[:3],
             "lambda_a": round(la_adj, 4), "lambda_a_raw": round(la_raw, 4),
             "lambda_b": round(lb_adj, 4), "lambda_b_raw": round(lb_raw, 4),
@@ -933,6 +971,7 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
             "aw_elite": aw_elite,
             "hm_elite": hm_elite,
             "total_line": total_line,
+            "line_missing": line_missing,
             "factors": {
                 "r5": f_r5, "r15": f_r15,
                 "goalie": f_goalie, "goalie_projected": f_goalie_projected,

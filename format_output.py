@@ -246,8 +246,13 @@ def format_game(m, teams, line_lookup, injuries, context_map):
     out.append("|---|---|")
     out.append(f"| confidence | **{conf}/6**  {conf_dots(conf)} |")
     out.append(f"| total line | **{line_val}** |")
-    out.append(f"| combined r5 | {m['comb_r5']}/10 ({m['comb_r5_pct']}%) |")
-    out.append(f"| combined r15 | {m['comb_r15']}/30 ({m['comb_r15_pct']}%) |")
+    r5_n = m.get("comb_r5_n", 10)
+    r15_n = m.get("comb_r15_n", 30)
+    r5_shared = m.get("r5_shared", 0)
+    r5_dedup = f" · {r5_shared} shared" if r5_shared else ""
+    r15_dedup = f" · {m.get('r15_shared', 0)} shared" if m.get("r15_shared") else ""
+    out.append(f"| combined r5 | {m['comb_r5']}/{r5_n} ({m['comb_r5_pct']}%){r5_dedup} |")
+    out.append(f"| combined r15 | {m['comb_r15']}/{r15_n} ({m['comb_r15_pct']}%){r15_dedup} |")
     out.append(f"| goalie pair | {f['goalie_pair']} |")
     out.append("")
     out.append(f"**factors:** r5 {sign(f['r5'])} · r15 {sign(f['r15'])} · goalie {sign(f['goalie'])} · line {sign(f['line'])}")
