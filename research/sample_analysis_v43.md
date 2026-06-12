@@ -7,50 +7,50 @@ nhl 1p u2.5 — march 28, 2026
 ── tonight at a glance ──
 
 ```
-game         conf  line  goalies          start        notes
-fla @ nyi    5/6   5.5   starter+starter  1:00 pm et   day
-phi @ det    5/6   5.5   starter+starter  8:00 pm et
-ott @ tbl    4/6   6.0   starter+tandem   1:00 pm et   day
-ana @ edm    3/6   6.5   starter+tandem   3:30 pm et   day
-min @ bos    3/6   6.0   starter+tandem   5:00 pm et
-uta @ lak    3/6   5.5   starter+starter  9:00 pm et
-van @ cgy    3/6   6.0   starter+tandem   10:00 pm et
-tor @ stl    2/6   6.0   tandem+tandem    7:00 pm et
-wpg @ col    2/6   6.0   starter+tandem   7:00 pm et
-wsh @ vgk    2/6   -     backup+starter   10:30 pm et  no line
-dal @ pit    1/6   6.0   starter+tandem   5:00 pm et
-mtl @ nsh    1/6   6.5   starter+tandem   7:00 pm et
-njd @ car    0/6   6.5   tandem+tandem    5:00 pm et
-sjs @ cbj    0/6   6.5   starter+tandem   5:00 pm et
-sea @ buf    0/6   6.5   tandem+tandem    5:30 pm et
+game         conf  line  pair  start        notes
+fla @ nyi    5/6   5.5   s+s   1:00 pm et   day
+phi @ det    5/6   5.5   s+s   8:00 pm et
+ott @ tbl    4/6   6.0   s+t   1:00 pm et   day
+ana @ edm    3/6   6.5   s+t   3:30 pm et   day
+min @ bos    3/6   6.0   s+t   5:00 pm et
+uta @ lak    3/6   5.5   s+s   9:00 pm et
+van @ cgy    3/6   6.0   s+t   10:00 pm et
+tor @ stl    2/6   6.0   t+t   7:00 pm et
+wpg @ col    2/6   6.0   s+t   7:00 pm et
+wsh @ vgk    2/6   -     b+s   10:30 pm et  no line
+dal @ pit    1/6   6.0   s+t   5:00 pm et
+mtl @ nsh    1/6   6.5   s+t   7:00 pm et
+njd @ car    0/6   6.5   t+t   5:00 pm et
+sjs @ cbj    0/6   6.5   s+t   5:00 pm et
+sea @ buf    0/6   6.5   t+t   5:30 pm et
 ```
 
 ── tonight's parlay — 1p under 2.5, 2 legs ──
 
 leg 1 — phi @ det (5/6)
 
-> 8:00 pm et · line 5.5 · starter+starter
+> 8:00 pm et · line 5.5 · s+s
 > r5 +2 · day +0 · goalie +2 · line +1
 > note: meaningless game (clinched+eliminated) — starter rest risk, high variance
 
 leg 2 — fla @ nyi (5/6)
 
-> 1:00 pm et · line 5.5 · starter+starter · day
+> 1:00 pm et · line 5.5 · s+s · day
 > r5 +1 · day +1 · goalie +2 · line +1
 > note: meaningless game (eliminated+eliminated) — starter rest risk, high variance
 
 ── honorable mentions ──
 
 ```
-matchup      conf  line  goalies          notes
-ott @ tbl    4/6   6.0   starter+tandem   day
-ana @ edm    3/6   6.5   starter+tandem   day
-min @ bos    3/6   6.0   starter+tandem
-uta @ lak    3/6   5.5   starter+starter
-van @ cgy    3/6   6.0   starter+tandem
-tor @ stl    2/6   6.0   tandem+tandem
-wpg @ col    2/6   6.0   starter+tandem
-wsh @ vgk    2/6   -     backup+starter   no line
+matchup      conf  line  pair  notes
+ott @ tbl    4/6   6.0   s+t   day
+ana @ edm    3/6   6.5   s+t   day
+min @ bos    3/6   6.0   s+t
+uta @ lak    3/6   5.5   s+s
+van @ cgy    3/6   6.0   s+t
+tor @ stl    2/6   6.0   t+t
+wpg @ col    2/6   6.0   s+t
+wsh @ vgk    2/6   -     b+s   no line
 ```
 
 ── avoid ──
@@ -88,12 +88,12 @@ parlays 18-5 (78.3%) · legs 41-5 (89.1%) · 5+/6: 33-2 · hm 74-42 · avoid 57-
 click any game to expand — sorted by confidence
 
 <details>
-<summary>fla @ nyi · 5/6 · line 5.5 · starter+starter · 1:00 pm et · day</summary>
+<summary>fla @ nyi · 5/6 · line 5.5 · s+s · 1:00 pm et · day</summary>
 
 > 5/6 — r5 +1 · day +1 · goalie +2 · line +1
 > r5 7/10 (70.0%) · r15 20/29 (69.0%, 1 shared, unscored) · line 5.5 · 1:00 pm et · day game
 
-fla — bobrovsky (starter)
+fla — bobrovsky (starter) · last-5 1p ga 0,0,3,0,0 · season sv% .877
 
 ```
 ✓✓✓✓✗  ✗✓✓✓✓  ✓✗✓✗✓   ← newest
@@ -118,7 +118,7 @@ fla — bobrovsky (starter)
 
 > r5 4/5 (80%) · r15 11/15 (73%) · road 6/9 (67%) · wavg gf 0.73 · moderate
 
-nyi — sorokin (starter)
+nyi — sorokin (starter) · last-5 1p ga 0,3,0,1,0 · season sv% .906
 
 ```
 ✓✗✓✗✓  ✓✗✗✓✓  ✓✗✗✓✓   ← newest
@@ -159,12 +159,12 @@ goalies
 </details>
 
 <details>
-<summary>phi @ det · 5/6 · line 5.5 · starter+starter · 8:00 pm et</summary>
+<summary>phi @ det · 5/6 · line 5.5 · s+s · 8:00 pm et</summary>
 
 > 5/6 — r5 +2 · day +0 · goalie +2 · line +1
 > r5 9/10 (90.0%) · r15 27/30 (90.0%, unscored) · line 5.5 · 8:00 pm et
 
-phi — vladar (starter)
+phi — vladar (starter) · last-5 1p ga 0,0,0,1,0 · season sv% .906
 
 ```
 ✓✓✓✓✓  ✓✓✓✗✓  ✓✓✓✓✓   ← newest
@@ -189,7 +189,7 @@ phi — vladar (starter)
 
 > r5 5/5 (100%) · r15 14/15 (93%) · road 8/8 (100%) · wavg gf 0.61 · structured
 
-det — gibson (starter)
+det — gibson (starter) · last-5 1p ga 0,1,0,0,1 · season sv% .901
 
 ```
 ✗✓✓✓✓  ✓✓✓✓✓  ✗✓✓✓✓   ← newest
@@ -229,12 +229,12 @@ goalies
 </details>
 
 <details>
-<summary>ott @ tbl · 4/6 · line 6.0 · starter+tandem · 1:00 pm et · day</summary>
+<summary>ott @ tbl · 4/6 · line 6.0 · s+t · 1:00 pm et · day</summary>
 
 > 4/6 — r5 +2 · day +1 · goalie +1 · line +0
 > r5 8/10 (80.0%) · r15 21/30 (70.0%, unscored) · line 6.0 · 1:00 pm et · day game
 
-ott — ullmark (tandem)
+ott — ullmark (tandem) · last-5 1p ga 1,0,0,0,2 · season sv% .891
 
 ```
 ✓✓✓✓✓  ✓✗✓✗✓  ✗✓✗✓✓   ← newest
@@ -259,7 +259,7 @@ ott — ullmark (tandem)
 
 > r5 5/5 (100%) · r15 11/15 (73%) · road 6/8 (75%) · wavg gf 0.83 · moderate
 
-tbl — vasilevskiy (starter)
+tbl — vasilevskiy (starter) · last-5 1p ga 2,2,1,0,0 · season sv% .912
 
 ```
 ✗✓✗✓✓  ✓✓✓✓✓  ✗✓✓✗✗   ← newest
@@ -299,12 +299,12 @@ goalies
 </details>
 
 <details>
-<summary>ana @ edm · 3/6 · line 6.5 · starter+tandem · 3:30 pm et · day</summary>
+<summary>ana @ edm · 3/6 · line 6.5 · s+t · 3:30 pm et · day</summary>
 
 > 3/6 — r5 +2 · day +1 · goalie +1 · line -1
 > r5 8/10 (80.0%) · r15 18/30 (60.0%, unscored) · line 6.5 · 3:30 pm et · day game
 
-ana — dostal (starter)
+ana — dostal (starter) · last-5 1p ga 1,1,1,0,1 · season sv% .888
 
 ```
 ✓✓✗✓✓  ✓✓✗✓✓  ✗✗✓✓✓   ← newest
@@ -329,7 +329,7 @@ ana — dostal (starter)
 
 > r5 4/5 (80%) · r15 11/15 (73%) · road 6/7 (86%) · wavg gf 0.72 · moderate
 
-edm — ingram (tandem)
+edm — ingram (tandem) · last-5 1p ga 0,0,2,1,0 · season sv% .899
 
 ```
 ✓✓✓✓✗  ✓✓✗✗✓  ✗✗✗✗✗   ← newest
@@ -369,12 +369,12 @@ goalies
 </details>
 
 <details>
-<summary>min @ bos · 3/6 · line 6.0 · starter+tandem · 5:00 pm et</summary>
+<summary>min @ bos · 3/6 · line 6.0 · s+t · 5:00 pm et</summary>
 
 > 3/6 — r5 +2 · day +0 · goalie +1 · line +0
 > r5 9/10 (90.0%) · r15 28/30 (93.3%, unscored) · line 6.0 · 5:00 pm et
 
-min — gustavsson (tandem)
+min — gustavsson (tandem) · last-5 1p ga 0,1,1,2,0 · season sv% .904
 
 ```
 ✓✓✓✓✗  ✓✓✓✓✓  ✓✓✓✓✓   ← newest
@@ -399,7 +399,7 @@ min — gustavsson (tandem)
 
 > r5 4/5 (80%) · r15 14/15 (93%) · road 6/7 (86%) · wavg gf 0.53 · structured
 
-bos — swayman (starter)
+bos — swayman (starter) · last-5 1p ga 0,0,0,1,0 · season sv% .908
 
 ```
 ✓✓✓✓✓  ✓✓✓✓✓  ✓✓✗✓✓   ← newest
@@ -439,12 +439,12 @@ goalies
 </details>
 
 <details>
-<summary>uta @ lak · 3/6 · line 5.5 · starter+starter · 9:00 pm et</summary>
+<summary>uta @ lak · 3/6 · line 5.5 · s+s · 9:00 pm et</summary>
 
 > 3/6 — r5 +0 · day +0 · goalie +2 · line +1
 > r5 6/9 (66.7%, 1 shared) · r15 20/29 (69.0%, 1 shared, unscored) · line 5.5 · 9:00 pm et
 
-uta — vejmelka (starter)
+uta — vejmelka (starter) · last-5 1p ga 1,2,0,0,0 · season sv% .897
 
 ```
 ✗✓✗✓✗  ✓✓✓✓✗  ✓✓✗✓✓   ← newest
@@ -469,7 +469,7 @@ uta — vejmelka (starter)
 
 > r5 2/5 (40%) · r15 10/15 (67%) · road 4/7 (57%) · wavg gf 1.39 · moderate
 
-lak — kuemper (starter)
+lak — kuemper (starter) · last-5 1p ga 0,0,2,0,0 · season sv% .891
 
 ```
 ✓✓✗✓✓  ✓✓✗✓✗  ✓✓✗✓✗   ← newest
@@ -509,12 +509,12 @@ goalies
 </details>
 
 <details>
-<summary>van @ cgy · 3/6 · line 6.0 · starter+tandem · 10:00 pm et</summary>
+<summary>van @ cgy · 3/6 · line 6.0 · s+t · 10:00 pm et</summary>
 
 > 3/6 — r5 +2 · day +0 · goalie +1 · line +0
 > r5 8/10 (80.0%) · r15 21/30 (70.0%, unscored) · line 6.0 · 10:00 pm et
 
-van — lankinen (tandem)
+van — lankinen (tandem) · last-5 1p ga 1,0,0,1,1 · season sv% .875
 
 ```
 ✓✓✓✓✗  ✗✓✓✓✗  ✗✓✓✓✓   ← newest
@@ -539,7 +539,7 @@ van — lankinen (tandem)
 
 > r5 4/5 (80%) · r15 11/15 (73%) · road 3/4 (75%) · wavg gf 0.91 · moderate
 
-cgy — wolf (starter)
+cgy — wolf (starter) · last-5 1p ga 1,0,0,3,1 · season sv% .899
 
 ```
 ✓✓✗✓✓  ✓✗✗✓✗  ✓✓✗✓✓   ← newest
@@ -579,12 +579,12 @@ goalies
 </details>
 
 <details>
-<summary>tor @ stl · 2/6 · line 6.0 · tandem+tandem · 7:00 pm et</summary>
+<summary>tor @ stl · 2/6 · line 6.0 · t+t · 7:00 pm et</summary>
 
 > 2/6 — r5 +2 · day +0 · goalie +0 · line +0
 > r5 10/10 (100.0%) · r15 26/30 (86.7%, unscored) · line 6.0 · 7:00 pm et
 
-tor — woll (tandem)
+tor — woll (tandem) · last-5 1p ga 0,1,0,2,1 · season sv% .899
 
 ```
 ✓✓✓✓✓  ✓✓✗✓✗  ✓✓✓✓✗   ← newest
@@ -609,7 +609,7 @@ tor — woll (tandem)
 
 > r5 5/5 (100%) · r15 12/15 (80%) · road 7/8 (88%) · wavg gf 0.66 · moderate
 
-stl — hofer (tandem)
+stl — hofer (tandem) · last-5 1p ga 0,0,1,0,0 · season sv% .910
 
 ```
 ✓✓✓✓✓  ✓✓✓✓✓  ✓✓✓✓✗   ← newest
@@ -649,12 +649,12 @@ goalies
 </details>
 
 <details>
-<summary>wpg @ col · 2/6 · line 6.0 · starter+tandem · 7:00 pm et</summary>
+<summary>wpg @ col · 2/6 · line 6.0 · s+t · 7:00 pm et</summary>
 
 > 2/6 — r5 +1 · day +0 · goalie +1 · line +0
 > r5 7/9 (77.8%, 1 shared) · r15 21/28 (75.0%, 2 shared, unscored) · line 6.0 · 7:00 pm et
 
-wpg — hellebuyck (starter)
+wpg — hellebuyck (starter) · last-5 1p ga 1,0,2,1,1 · season sv% .895
 
 ```
 ✓✓✓✗✓  ✓✓✓✓✓  ✓✓✓✓✓   ← newest
@@ -679,7 +679,7 @@ wpg — hellebuyck (starter)
 
 > r5 4/5 (80%) · r15 14/15 (93%) · road 4/5 (80%) · wavg gf 0.70 · structured
 
-col — blackwood (tandem)
+col — blackwood (tandem) · last-5 1p ga 1,1,0,4,0 · season sv% .903
 
 ```
 ✓✗✓✓✓  ✗✓✗✗✓  ✗✓✗✓✓   ← newest
@@ -719,13 +719,13 @@ goalies
 </details>
 
 <details>
-<summary>wsh @ vgk · 2/6 · line - · backup+starter · 10:30 pm et · no line</summary>
+<summary>wsh @ vgk · 2/6 · line - · b+s · 10:30 pm et · no line</summary>
 
 > 2/6 — r5 +1 · day +0 · goalie +1 · line +0
 > r5 7/10 (70.0%) · r15 21/29 (72.4%, 1 shared, unscored) · line - · 10:30 pm et
 > no sourced line — capped at 3/6 (fail-closed line gate)
 
-wsh — thompson (starter)
+wsh — thompson (starter) · last-5 1p ga 3,0,0,0,0 · season sv% .912
 
 ```
 ✗✓✓✓✓  ✓✓✓✗✓  ✗✗✓✓✓   ← newest
@@ -750,7 +750,7 @@ wsh — thompson (starter)
 
 > r5 4/5 (80%) · r15 11/15 (73%) · road 4/6 (67%) · wavg gf 0.70 · moderate
 
-vgk — hill (backup)
+vgk — hill (backup) · last-5 1p ga 1,1,2,1,0 · season sv% .871
 
 ```
 ✓✓✗✓✗  ✓✗✓✓✓  ✓✗✓✓✓   ← newest
@@ -790,12 +790,12 @@ goalies
 </details>
 
 <details>
-<summary>dal @ pit · 1/6 · line 6.0 · starter+tandem · 5:00 pm et</summary>
+<summary>dal @ pit · 1/6 · line 6.0 · s+t · 5:00 pm et</summary>
 
 > 1/6 — r5 +0 · day +0 · goalie +1 · line +0
 > r5 6/10 (60.0%) · r15 20/30 (66.7%, unscored) · line 6.0 · 5:00 pm et
 
-dal — oettinger (starter)
+dal — oettinger (starter) · last-5 1p ga 1,0,1,0,0 · season sv% .899
 
 ```
 ✓✗✗✓✓  ✓✓✗✓✗  ✗✗✓✓✓   ← newest
@@ -820,7 +820,7 @@ dal — oettinger (starter)
 
 > r5 3/5 (60%) · r15 9/15 (60%) · road 4/5 (80%) · wavg gf 1.10 · volatile
 
-pit — skinner (tandem)
+pit — skinner (tandem) · last-5 1p ga 1,1,1,2,1 · season sv% .888
 
 ```
 ✓✗✓✗✓  ✗✓✓✓✓  ✓✓✗✓✓   ← newest
@@ -860,12 +860,12 @@ goalies
 </details>
 
 <details>
-<summary>mtl @ nsh · 1/6 · line 6.5 · starter+tandem · 7:00 pm et</summary>
+<summary>mtl @ nsh · 1/6 · line 6.5 · s+t · 7:00 pm et</summary>
 
 > 1/6 — r5 +1 · day +0 · goalie +1 · line -1
 > r5 7/10 (70.0%) · r15 24/30 (80.0%, unscored) · line 6.5 · 7:00 pm et
 
-mtl — dobes (tandem)
+mtl — dobes (tandem) · last-5 1p ga 1,2,0,1,1 · season sv% .901
 
 ```
 ✓✗✗✓✓  ✓✓✗✓✓  ✗✓✗✓✓   ← newest
@@ -890,7 +890,7 @@ mtl — dobes (tandem)
 
 > r5 3/5 (60%) · r15 10/15 (67%) · road 4/6 (67%) · wavg gf 0.95 · moderate
 
-nsh — saros (starter)
+nsh — saros (starter) · last-5 1p ga 1,0,1,1,2 · season sv% .893
 
 ```
 ✓✗✓✓✓  ✓✓✓✓✓  ✓✓✓✓✓   ← newest
@@ -930,12 +930,12 @@ goalies
 </details>
 
 <details>
-<summary>njd @ car · 0/6 · line 6.5 · tandem+tandem · 5:00 pm et</summary>
+<summary>njd @ car · 0/6 · line 6.5 · t+t · 5:00 pm et</summary>
 
 > 0/6 — r5 +1 · day +0 · goalie +0 · line -1
 > r5 7/10 (70.0%) · r15 22/30 (73.3%, unscored) · line 6.5 · 5:00 pm et
 
-njd — markstrom (tandem)
+njd — markstrom (tandem) · last-5 1p ga 0,1,2,2,1 · season sv% .883
 
 ```
 ✓✗✓✗✓  ✓✗✓✗✓  ✓✓✓✓✓   ← newest
@@ -960,7 +960,7 @@ njd — markstrom (tandem)
 
 > r5 3/5 (60%) · r15 11/15 (73%) · road 4/6 (67%) · wavg gf 1.08 · moderate
 
-car — andersen (tandem)
+car — andersen (tandem) · last-5 1p ga 1,0,0,0,1 · season sv% .874
 
 ```
 ✗✓✓✓✓  ✓✓✓✓✗  ✗✓✓✗✓   ← newest
@@ -1000,12 +1000,12 @@ goalies
 </details>
 
 <details>
-<summary>sjs @ cbj · 0/6 · line 6.5 · starter+tandem · 5:00 pm et</summary>
+<summary>sjs @ cbj · 0/6 · line 6.5 · s+t · 5:00 pm et</summary>
 
 > 0/6 — r5 +0 · day +0 · goalie +1 · line -1
 > r5 6/10 (60.0%) · r15 22/30 (73.3%, unscored) · line 6.5 · 5:00 pm et
 
-sjs — nedeljkovic (tandem)
+sjs — nedeljkovic (tandem) · last-5 1p ga 0,5,0,0,3 · season sv% .896
 
 ```
 ✓✗✓✓✗  ✗✓✓✗✓  ✓✓✓✗✓   ← newest
@@ -1030,7 +1030,7 @@ sjs — nedeljkovic (tandem)
 
 > r5 3/5 (60%) · r15 10/15 (67%) · road 3/7 (43%) · wavg gf 0.70 · moderate
 
-cbj — greaves (starter)
+cbj — greaves (starter) · last-5 1p ga 1,1,1,1,0 · season sv% .908
 
 ```
 ✓✓✓✗✗  ✓✓✓✓✗  ✓✓✓✓✓   ← newest
@@ -1070,12 +1070,12 @@ goalies
 </details>
 
 <details>
-<summary>sea @ buf · 0/6 · line 6.5 · tandem+tandem · 5:30 pm et</summary>
+<summary>sea @ buf · 0/6 · line 6.5 · t+t · 5:30 pm et</summary>
 
 > 0/6 — r5 +0 · day +0 · goalie +0 · line -1
 > r5 6/10 (60.0%) · r15 20/30 (66.7%, unscored) · line 6.5 · 5:30 pm et
 
-sea — daccord (tandem)
+sea — daccord (tandem) · last-5 1p ga 0,3,1,1,0 · season sv% .897
 
 ```
 ✗✓✗✓✓  ✗✗✗✓✗  ✓✓✓✓✓   ← newest
@@ -1100,7 +1100,7 @@ sea — daccord (tandem)
 
 > r5 3/5 (60%) · r15 9/15 (60%) · road 4/7 (57%) · wavg gf 1.10 · volatile
 
-buf — lyon (tandem)
+buf — lyon (tandem) · last-5 1p ga 3,2,0,1,1 · season sv% .907
 
 ```
 ✗✓✗✓✓  ✓✓✓✗✓  ✓✓✓✗✓   ← newest

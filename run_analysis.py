@@ -1094,6 +1094,7 @@ def main():
         teams_out[team] = {
             "games": m["games"],
             "goalie_labels": m["goalie_labels"],
+            "goalie_per_game": m["goalie_per_game"],
             "starter_name": m["starter_name"],
             "goalie_starts": m["goalie_starts"],
             "r5_u25": m["r5_u25"],

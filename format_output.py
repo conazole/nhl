@@ -69,6 +69,32 @@ def section(title):
     return f"── {title} ──"
 
 
+def pair_abbrev(pair):
+    """'starter+starter' -> 's+s', 'backup+starter' -> 'b+s' (display only —
+    the log keeps full words)."""
+    if not pair:
+        return "-"
+    return "+".join(p[0] if p else "?" for p in pair.split("+"))
+
+
+def goalie_line(team_l, goalie_ln, cls, team_data, sv_pct):
+    """team header line with the goalie's own recent 1p record:
+    'uta — vejmelka (starter) · last-5 1p ga 1,0,2,1,0 · season sv% .912'.
+    last-5 = team 1p goals against in his 5 most recent starts in the
+    15-game window (newest first)."""
+    parts = [f"{team_l} — {goalie_ln} ({cls})"]
+    per_game = team_data.get("goalie_per_game") or []
+    gas = [str(g["ga"]) for g, name in zip(team_data["games"], per_game)
+           if name == goalie_ln][:5]
+    if gas:
+        parts.append(f"last-{len(gas)} 1p ga {','.join(gas)}")
+    else:
+        parts.append("no starts in window")
+    if sv_pct:
+        parts.append(f"season sv% {sv_pct:.3f}".replace("0.", "."))
+    return " · ".join(parts)
+
+
 def streak_strip(games, n=15):
     """u2.5 streak as ✓/✗ groups of 5, most recent first: '✓✓✗✓✓  ✗✓✓✓✗'."""
     marks = ["✓" if g["u25"] else "✗" for g in games[:n]]
@@ -96,12 +122,12 @@ def at_a_glance(matchups):
     out.append(section("tonight at a glance"))
     out.append("")
     out.append("```")
-    out.append(f"{'game':<12} {'conf':<5} {'line':<5} {'goalies':<16} {'start':<12} notes")
+    out.append(f"{'game':<12} {'conf':<5} {'line':<5} {'pair':<5} {'start':<12} notes")
     for m in matchups:
         g = f"{m['away'].lower()} @ {m['home'].lower()}"
         f = m["factors"]
         out.append(f"{g:<12} {str(m['confidence']) + '/6':<5} "
-                   f"{format_line(m['total_line']):<5} {f['goalie_pair']:<16} "
+                   f"{format_line(m['total_line']):<5} {pair_abbrev(f['goalie_pair']):<5} "
                    f"{start_time_et(m['start_utc']):<12} {game_tags(m)}".rstrip())
     out.append("```")
     out.append("")
@@ -306,7 +332,7 @@ def format_game(m, teams, line_lookup, injuries, context_map):
         f"{away_l} @ {home_l}",
         f"{tier_label(conf)}",
         f"line {line_val}",
-        f"{f['goalie_pair']}",
+        f"{pair_abbrev(f['goalie_pair'])}",
         f"{start_time_et(m['start_utc'])}",
     ]
     tags = game_tags(m)
@@ -332,13 +358,13 @@ def format_game(m, teams, line_lookup, injuries, context_map):
     out.append("")
 
     # ── teams ──
-    for team, team_l, goalie, cls in ((away, away_l, m["aw_goalie"], m["aw_goalie_cls"]),
-                                      (home, home_l, m["hm_goalie"], m["hm_goalie_cls"])):
+    for team, team_l, goalie, cls, sv in ((away, away_l, m["aw_goalie"], m["aw_goalie_cls"], m.get("aw_sv_pct")),
+                                          (home, home_l, m["hm_goalie"], m["hm_goalie_cls"], m.get("hm_sv_pct"))):
         t = teams[team]
         is_home_side = t["tonight_ha"] == "h"
         venue_lbl = "home" if is_home_side else "road"
         v_pct = t["venue_u25"] / t["venue_total"] * 100 if t["venue_total"] > 0 else 0.0
-        out.append(f"{team_l} — {goalie} ({cls})")
+        out.append(goalie_line(team_l, goalie, cls, t, sv))
         out.append("")
         out.append(format_table(team, t, line_lookup,
                                 streak=f"{streak_strip(t['games'])}   ← newest"))
@@ -454,7 +480,7 @@ def format_recommendation(matchups, record):
             out.append(f"leg {i} — {a} @ {h} ({p['confidence']}/6)")
             out.append("")
             out.append(f"> {start_time_et(p['start_utc'])} · line {format_line(p['total_line'])} · "
-                       f"{fct['goalie_pair']}{(' · ' + tags) if tags else ''}")
+                       f"{pair_abbrev(fct['goalie_pair'])}{(' · ' + tags) if tags else ''}")
             out.append(f"> {factor_str(fct)}")
             caution = leg_caution(p)
             if caution:
@@ -472,7 +498,7 @@ def format_recommendation(matchups, record):
         out.append(f"single-leg watch: {a} @ {h} — {p['confidence']}/6")
         out.append("")
         out.append(f"> {start_time_et(p['start_utc'])} · line {format_line(p['total_line'])} · "
-                   f"{fct['goalie_pair']} · logged as hm (2-leg rule)")
+                   f"{pair_abbrev(fct['goalie_pair'])} · logged as hm (2-leg rule)")
         out.append("")
 
     else:
@@ -483,12 +509,12 @@ def format_recommendation(matchups, record):
         out.append(section("honorable mentions"))
         out.append("")
         out.append("```")
-        out.append(f"{'matchup':<12} {'conf':<5} {'line':<5} {'goalies':<16} notes")
+        out.append(f"{'matchup':<12} {'conf':<5} {'line':<5} {'pair':<5} notes")
         for m in hms:
             f = m["factors"]
             g = f"{m['away'].lower()} @ {m['home'].lower()}"
             out.append(f"{g:<12} {str(m['confidence']) + '/6':<5} "
-                       f"{format_line(m['total_line']):<5} {f['goalie_pair']:<16} {game_tags(m)}".rstrip())
+                       f"{format_line(m['total_line']):<5} {pair_abbrev(f['goalie_pair']):<5} {game_tags(m)}".rstrip())
         out.append("```")
         out.append("")
 
@@ -500,7 +526,7 @@ def format_recommendation(matchups, record):
         for m in avoids:
             f = m["factors"]
             reasons = []
-            if f["goalie"] < 0: reasons.append(f["goalie_pair"])
+            if f["goalie"] < 0: reasons.append(pair_abbrev(f["goalie_pair"]))
             if f["line"] < 0: reasons.append(f"{format_line(m['total_line'])} line")
             if f["r5"] == 0: reasons.append(f"r5 {m['comb_r5_pct']:.0f}%")
             reason_str = ", ".join(reasons) if reasons else "low factors"
