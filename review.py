@@ -315,7 +315,7 @@ def analyze(entries, last_days=None):
     else:
         out(f"  sample: {len(entries_with_factors)} resolved games with factor data")
         out()
-        for factor in ("r5", "r15", "goalie", "line"):
+        for factor in ("r5", "day", "r15", "goalie", "line"):
             buckets = defaultdict(lambda: {"w": 0, "l": 0})
             for e in entries_with_factors:
                 pts = e["factors"].get(factor)

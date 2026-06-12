@@ -134,7 +134,7 @@ def main():
     entries_with_factors = [e for e in entries if e.get("factors")]
     factor_report = {}
     if entries_with_factors:
-        for factor in ("r5", "r15", "goalie", "line"):
+        for factor in ("r5", "day", "r15", "goalie", "line"):
             per_bucket = defaultdict(lambda: {"w": 0, "n": 0})
             for e in entries_with_factors:
                 pts = e["factors"].get(factor)

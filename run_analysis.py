@@ -11,7 +11,11 @@ outputs JSON to stdout. progress to stderr.
 import json, sys, urllib.request, time, zipfile, csv, io, argparse, os, hashlib
 from datetime import datetime, timedelta
 from math import exp, factorial
+from zoneinfo import ZoneInfo
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+ET_TZ = ZoneInfo("America/New_York")
+MODEL_VERSION = "v4.3"
 
 # ============================================================
 # constants
@@ -784,22 +788,28 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
         if hm["rest_days"] == 1:
             b2b_teams.append(home)
 
-        # ----- confidence scoring (v4: mar 27 2026) -----
-        # 4 factors. v3 core (892 games) + line factor (1149 games):
-        #   r5 (0-2): 80%+ = best bucket (77.4%)
-        #   r15 (0-1): 70%+ confirmation (76.7%)
-        #   goalie (-1 to +2): matchup type (starter vs starter = 81.0%)
-        #   line (-1 to +1): 5.5=+1, 6.0=0, 6.5+=-1 (78.7% vs 72.6%)
-        #   goalie matchup type (-1 to +2): starter vs starter = 81.0%
+        # ----- confidence scoring (v4.3: jun 12 2026) -----
+        # 4 factors on /6. v4 core (1149 games) + v4.3 point-in-time
+        # revalidation (1393 games, train/holdout split feb 15):
+        #   r5 (0-2): 80%+ best bucket (holdout 76.3% vs 68.2% for <70)
+        #   day game (0-1): start <5pm ET = +1 (83.2% u2.5, holds both halves)
+        #   goalie (-1 to +2): starter+starter = 79.6% point-in-time
+        #   line (-1 to +1): 5.5=+1, 6.0=0, 6.5+=-1 (77.3/75.6/70.1)
+        # r15 UNSCORED since v4.3 — +1.6pp full season, INVERTED on holdout;
+        # its near-free +1 (fired on 63% of games) promoted base-rate games
+        # into the pick tier (the 208 picks it added hit 75.0% = base rate).
+        # still computed/logged/displayed + used in the deterministic tiebreak.
         # elite bonus KILLED — noise on 892 games (75.0%, +0.4pp).
 
-        # early start detection (informational — not scored)
-        is_early = False
+        # day-game detection (v4.3 factor input): local start before 5pm ET
+        is_day_game = False
+        et_hour = None
         if start_utc:
             try:
-                st = datetime.strptime(start_utc[:19], "%Y-%m-%dT%H:%M:%S")
-                cst_hour = (st.hour - 6) % 24
-                is_early = cst_hour in (11, 12)
+                dt_utc = datetime.fromisoformat(start_utc.replace("Z", "+00:00"))
+                dt_et = dt_utc.astimezone(ET_TZ)
+                et_hour = round(dt_et.hour + dt_et.minute / 60, 2)
+                is_day_game = et_hour < 17
             except Exception:
                 pass
 
@@ -869,10 +879,13 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
         elif comb_r5_pct >= 70:  f_r5 = 1
         else:                    f_r5 = 0
 
-        # factor 2: combined recent 15 (0-1)
-        # 892-game backtest: r15 70-79% = 76.7% (+2.1pp), sweet spot.
-        if comb_r15_pct >= 70:   f_r15 = 1
-        else:                    f_r15 = 0
+        # factor 2 (v4.3): day game (0-1) — start before 5pm ET.
+        # 1393-game point-in-time validation: day games 83.2% u2.5 (119/143)
+        # vs 72.7% prime-time. holds train (matinee 81.6%, afternoon 81.7%)
+        # AND holdout (93.3%, 88.5% weekend-day). mechanism: routine
+        # disruption + the 1p feeling-out process = cautious, low-event
+        # opening frames. replaces r15 (failed holdout validation).
+        f_day = 1 if is_day_game else 0
 
         # factor 3: goalie matchup type (-1 to +2)
         # v4.1: split backup by partner type (275-game audit, apr 2026).
@@ -906,9 +919,9 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
         else:
             f_line = 0  # no line data = neutral
 
-        # v4 scale: /6. pick >= 4, HM = 2-3, avoid < 2.
-        total_conf = max(0, f_r5 + f_r15 + f_goalie + f_line)
-        total_conf_projected = max(0, f_r5 + f_r15 + f_goalie_projected + f_line)
+        # v4.3 scale: /6. pick >= 4, HM = 2-3, avoid < 2.
+        total_conf = max(0, f_r5 + f_day + f_goalie + f_line)
+        total_conf_projected = max(0, f_r5 + f_day + f_goalie_projected + f_line)
 
         # v4.2 playoff game-1 cap (playoffs only, gameType=3, game 1 of series):
         # 5-year audit shows g1 u2.5 rate is 72% pooled and 63.3% in last 2 seasons —
@@ -956,7 +969,8 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
             "is_playoff": is_playoff,
             "series_game_num": series_game_num,
             "series_info": series_info,
-            "is_early": is_early,
+            "is_day_game": is_day_game,
+            "et_hour": et_hour,
             "start_utc": start_utc,
             "aw_confirmed": aw_confirmed,
             "hm_confirmed": hm_confirmed,
@@ -973,7 +987,7 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
             "total_line": total_line,
             "line_missing": line_missing,
             "factors": {
-                "r5": f_r5, "r15": f_r15,
+                "r5": f_r5, "day": f_day,
                 "goalie": f_goalie, "goalie_projected": f_goalie_projected,
                 "goalie_pair": f"{pair[0]}+{pair[1]}",
                 "line": f_line,
@@ -1101,6 +1115,7 @@ def main():
 
     output = {
         "target_date": target_date,
+        "model_version": MODEL_VERSION,
         "games_tonight": [list(g) for g in games_tonight],
         "league_total": league_total,
         "league_u25": league_u25,

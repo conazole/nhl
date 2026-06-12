@@ -40,13 +40,12 @@ def entries_from_engine(data):
             "combined_last15_pct": m.get("comb_r15_pct", 0),
             "poisson_pct": m.get("poisson_pct", 0),
 
-            # factor breakdown (v4.2+): individual contributions so we can backtest weights
-            "factors": {
-                "r5": factors.get("r5"),
-                "r15": factors.get("r15"),
-                "goalie": factors.get("goalie"),
-                "line": factors.get("line"),
-            },
+            # factor breakdown: individual contributions so we can backtest
+            # weights. keys vary by model version (v4.2: r5/r15/goalie/line,
+            # v4.3+: r5/day/goalie/line) — store whatever the engine scored.
+            "factors": {k: factors.get(k)
+                        for k in ("r5", "day", "r15", "goalie", "line")
+                        if factors.get(k) is not None},
 
             # goalie prediction state (what we believed when the pick was made)
             "goalie_pair": factors.get("goalie_pair"),
@@ -62,6 +61,10 @@ def entries_from_engine(data):
         }
         if m.get("is_playoff") and m.get("series_info"):
             entry["series_info"] = m.get("series_info")
+        if data.get("model_version"):
+            entry["model_version"] = data["model_version"]
+        if m.get("is_day_game") is not None:
+            entry["is_day_game"] = m["is_day_game"]
 
         if conf < 2:
             entry["tier"] = "avoid"
@@ -148,6 +151,7 @@ def main():
         "tier", "reason", "factors", "goalie_pair",
         "aw_goalie", "hm_goalie", "aw_goalie_cls", "hm_goalie_cls",
         "aw_confirmed", "hm_confirmed", "is_playoff", "series_info",
+        "model_version", "is_day_game",
     )
 
     from datetime import datetime, timezone

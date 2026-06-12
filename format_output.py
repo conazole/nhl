@@ -19,9 +19,12 @@ extras JSON schema:
 
 import json, sys, argparse
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from collections import defaultdict
 
 from record import compute_season_record, pick_sort_key, parlay_legs_for_date
+
+ET_TZ = ZoneInfo("America/New_York")
 
 # ── paths ──
 LOG_PATH = "/Users/raz/claude/nhl/picks_log.jsonl"
@@ -43,8 +46,18 @@ def conf_dots(conf, scale=6):
 
 def start_time_et(utc_str):
     dt = datetime.fromisoformat(utc_str.replace("Z", "+00:00"))
-    et = dt - timedelta(hours=4)  # EDT
+    et = dt.astimezone(ET_TZ)  # handles EST/EDT correctly
     return et.strftime("%-I:%M %p").lower() + " et"
+
+
+def factor_str(f, sep=" · "):
+    """render whichever factors this entry scored (v4.2: r5/r15/goalie/line,
+    v4.3+: r5/day/goalie/line)."""
+    parts = []
+    for key in ("r5", "day", "r15", "goalie", "line"):
+        if f.get(key) is not None:
+            parts.append(f"{key} {sign(f[key])}")
+    return sep.join(parts)
 
 def sign(v):
     return f"+{v}" if v >= 0 else str(v)
@@ -255,7 +268,7 @@ def format_game(m, teams, line_lookup, injuries, context_map):
     out.append(f"| combined r15 | {m['comb_r15']}/{r15_n} ({m['comb_r15_pct']}%){r15_dedup} |")
     out.append(f"| goalie pair | {f['goalie_pair']} |")
     out.append("")
-    out.append(f"**factors:** r5 {sign(f['r5'])} · r15 {sign(f['r15'])} · goalie {sign(f['goalie'])} · line {sign(f['line'])}")
+    out.append(f"**factors:** {factor_str(f)}")
     if playoff_detail_note:
         out.append("")
         out.append(f"{playoff_detail_note}")
@@ -372,7 +385,7 @@ def format_recommendation(matchups, record):
             out.append(f"### {a} @ {h} ({p['confidence']}/6)")
             out.append(f"> {start_time_et(p['start_utc'])} · {format_line(p['total_line'])} · {f['goalie_pair']}{playoff_tag(p, leading_sep=True)}")
             out.append(f">")
-            out.append(f"> r5:{sign(f['r5'])} · r15:{sign(f['r15'])} · goalie:{sign(f['goalie'])} · line:{sign(f['line'])}")
+            out.append(f"> {factor_str(f)}")
             out.append("")
         extra = [p for p in picks if p not in parlay_legs]
         hms = extra + hms
