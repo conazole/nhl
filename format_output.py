@@ -64,9 +64,9 @@ DIVIDER = "━" * 56
 
 
 def section(title):
-    """plain-text section label — no markdown heading syntax, so nothing
-    renders bold/oversized. quiet ── brackets give scannable structure."""
-    return f"── {title} ──"
+    """plain-text section label — no markdown heading syntax, no decoration.
+    blank lines + content shape (code blocks, quotes) carry the structure."""
+    return title
 
 
 def pair_abbrev(pair):

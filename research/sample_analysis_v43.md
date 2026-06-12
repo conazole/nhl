@@ -4,7 +4,7 @@ nhl 1p u2.5 — march 28, 2026
 
 15 games tonight · model v4.3 · league base rate 73.1% (260 sampled)
 
-── tonight at a glance ──
+tonight at a glance
 
 ```
 game         conf  line  pair  start        notes
@@ -25,7 +25,7 @@ sjs @ cbj    0/6   6.5   s+t   5:00 pm et
 sea @ buf    0/6   6.5   t+t   5:30 pm et
 ```
 
-── tonight's parlay — 1p under 2.5, 2 legs ──
+tonight's parlay — 1p under 2.5, 2 legs
 
 leg 1 — phi @ det (5/6)
 
@@ -39,7 +39,7 @@ leg 2 — fla @ nyi (5/6)
 > r5 +1 · day +1 · goalie +2 · line +1
 > note: meaningless game (eliminated+eliminated) — starter rest risk, high variance
 
-── honorable mentions ──
+honorable mentions
 
 ```
 matchup      conf  line  pair  notes
@@ -53,7 +53,7 @@ wpg @ col    2/6   6.0   s+t
 wsh @ vgk    2/6   -     b+s   no line
 ```
 
-── avoid ──
+avoid
 
 ```
 matchup      conf  line  reason
@@ -66,24 +66,24 @@ sea @ buf    0/6   6.5   6.5 line, r5 60%
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-── yesterday — mar 27, 2026 ──
+yesterday — mar 27, 2026
 
 no parlay — no games hit ≥4/6
 
 hm: det @ buf ✗ (1p 3)
 avoid: chi @ nyr ✓ (1p 2)
 
-── post-mortem ──
+post-mortem
 
 what we got right: nothing was bet on mar 27 and that was correct — det@buf (3/6 hm) went over on a 3-goal first, exactly the marginal profile the ≥4 gate exists to filter. what we got wrong: nothing material. chi@nyr (avoid, 1/6) landed under, but avoids going under at the base rate is expected, not a miss.
 
-── season — v4 ──
+season — v4
 
 parlays 18-5 (78.3%) · legs 41-5 (89.1%) · 5+/6: 33-2 · hm 74-42 · avoid 57-17
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-── game details ──
+game details
 
 click any game to expand — sorted by confidence
 
