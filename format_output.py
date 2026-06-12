@@ -446,6 +446,60 @@ def format_game(m, teams, line_lookup, injuries, context_map):
 
 # ── final recommendation ──
 
+# v4.1 goalie-pair points — used to price a late backup swap (display only)
+GOALIE_PTS = {("starter", "starter"): 2, ("starter", "tandem"): 1,
+              ("backup", "starter"): 1, ("tandem", "tandem"): 0,
+              ("backup", "tandem"): -1, ("backup", "backup"): -1}
+
+
+def conf_record(entries, conf):
+    """season w-l for all resolved v4 entries at this confidence."""
+    sub = [e for e in entries
+           if e.get("model") == "v4" and e.get("result") in ("win", "loss")
+           and e.get("confidence") == conf]
+    w = sum(1 for e in sub if e["result"] == "win")
+    return w, len(sub) - w
+
+
+def leg_fragility(p):
+    """what late news would knock this leg out of pick range (<4/6):
+    line movement and a surprise backup start. computed from the factor
+    math, so it states exactly what to re-check before betting."""
+    conf = p["confidence"]
+    f = p["factors"]
+    bits = []
+
+    line = p.get("total_line")
+    fl = f.get("line")
+    if line is not None and fl is not None:
+        exit_line = None
+        for new_line, nfl in ((6.0, 0), (6.5, -1)):
+            if new_line > line and conf - (fl - nfl) < 4:
+                exit_line = new_line
+                break
+        if exit_line is not None:
+            bits.append(f"out of pick range if line moves to {format_line(exit_line)}")
+        else:
+            bits.append("holds through line movement")
+
+    if p.get("is_playoff"):
+        bits.append("late goalie swap not priced (playoff override) — re-check dfo")
+    else:
+        fg = f.get("goalie")
+        clses = (p.get("aw_goalie_cls"), p.get("hm_goalie_cls"))
+        if fg is not None and all(clses):
+            worst = fg
+            for keep in clses:
+                cand = GOALIE_PTS.get(tuple(sorted([keep, "backup"])), -1)
+                worst = min(worst, cand)
+            if conf - (fg - worst) < 4:
+                bits.append("out if a backup swaps in")
+            else:
+                bits.append("survives a backup swap")
+
+    return " · ".join(bits)
+
+
 def leg_caution(m):
     """one-line risk context for a parlay leg: series state in playoffs,
     motivation/lineup caution in the regular season."""
@@ -462,7 +516,7 @@ def leg_caution(m):
                            m["away"].lower(), m["home"].lower())
 
 
-def format_recommendation(matchups, record):
+def format_recommendation(matchups, record, all_entries):
     picks = [m for m in matchups if m["confidence"] >= 4]
     hms = [m for m in matchups if 2 <= m["confidence"] <= 3]
     avoids = [m for m in matchups if m["confidence"] < 2]
@@ -481,7 +535,16 @@ def format_recommendation(matchups, record):
             out.append("")
             out.append(f"> {start_time_et(p['start_utc'])} · line {format_line(p['total_line'])} · "
                        f"{pair_abbrev(fct['goalie_pair'])}{(' · ' + tags) if tags else ''}")
+            ac = "confirmed" if p.get("aw_confirmed") else "unconfirmed"
+            hc = "confirmed" if p.get("hm_confirmed") else "unconfirmed"
+            out.append(f"> goalies: {p.get('aw_goalie', '?')} {ac} · {p.get('hm_goalie', '?')} {hc}")
             out.append(f"> {factor_str(fct)}")
+            w, l = conf_record(all_entries, p["confidence"])
+            if w + l > 0:
+                out.append(f"> {p['confidence']}/6 this season: {w}-{l} ({100*w/(w+l):.1f}%)")
+            frag = leg_fragility(p)
+            if frag:
+                out.append(f"> risk: {frag}")
             caution = leg_caution(p)
             if caution:
                 out.append(f"> note: {caution}")
@@ -646,7 +709,7 @@ def main():
 
     # ── tonight: at a glance, then the bet ──
     out.extend(at_a_glance(data["matchups"]))
-    out.extend(format_recommendation(data["matchups"], record))
+    out.extend(format_recommendation(data["matchups"], record, all_entries))
     out.append(DIVIDER)
     out.append("")
 

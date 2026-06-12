@@ -30,13 +30,19 @@ tonight's parlay — 1p under 2.5, 2 legs
 leg 1 — phi @ det (5/6)
 
 > 8:00 pm et · line 5.5 · s+s
+> goalies: vladar unconfirmed · gibson unconfirmed
 > r5 +2 · day +0 · goalie +2 · line +1
+> 5/6 this season: 19-4 (82.6%)
+> risk: out of pick range if line moves to 6.5 · survives a backup swap
 > note: meaningless game (clinched+eliminated) — starter rest risk, high variance
 
 leg 2 — fla @ nyi (5/6)
 
 > 1:00 pm et · line 5.5 · s+s · day
+> goalies: bobrovsky unconfirmed · sorokin unconfirmed
 > r5 +1 · day +1 · goalie +2 · line +1
+> 5/6 this season: 19-4 (82.6%)
+> risk: out of pick range if line moves to 6.5 · survives a backup swap
 > note: meaningless game (eliminated+eliminated) — starter rest risk, high variance
 
 honorable mentions
