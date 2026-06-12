@@ -41,8 +41,8 @@ def format_line(val):
         return f"{val:.1f}"
     return f"{val}"
 
-def conf_dots(conf, scale=6):
-    return "●" * conf + "○" * (scale - conf)
+def conf_str(conf):
+    return f"{conf}/6"
 
 def start_time_et(utc_str):
     dt = datetime.fromisoformat(utc_str.replace("Z", "+00:00"))
@@ -71,30 +71,30 @@ def streak_strip(games, n=15):
 
 
 def game_tags(m):
-    """compact tag string for summaries: day game, playoff, caution, no-line."""
+    """compact tag string for summaries: day game, playoff, no-line."""
     tags = []
     if m.get("is_day_game"):
-        tags.append("☀️ day")
+        tags.append("day")
     po = playoff_tag(m, leading_sep=False)
     if po:
         tags.append(po)
     if m.get("line_missing"):
-        tags.append("📵 no line")
+        tags.append("no line")
     return " · ".join(tags)
 
 
 def at_a_glance(matchups):
     """one row per game, sorted by confidence — the whole slate in one look."""
     out = []
-    out.append("## 🎯 tonight at a glance")
+    out.append("## tonight at a glance")
     out.append("")
-    out.append("| game | conf | | line | goalies | start | |")
-    out.append("|---|---|---|---|---|---|---|")
+    out.append("| game | conf | line | goalies | start | notes |")
+    out.append("|---|---|---|---|---|---|")
     for m in matchups:
         g = f"{m['away'].lower()} @ {m['home'].lower()}"
         f = m["factors"]
         tag = game_tags(m)
-        out.append(f"| **{g}** | {conf_dots(m['confidence'])} | {m['confidence']}/6 "
+        out.append(f"| {g} | {m['confidence']}/6 "
                    f"| {format_line(m['total_line'])} | {f['goalie_pair']} "
                    f"| {start_time_et(m['start_utc'])} | {tag} |")
     out.append("")
@@ -104,12 +104,7 @@ def sign(v):
     return f"+{v}" if v >= 0 else str(v)
 
 def tier_label(conf):
-    if conf >= 4:
-        return f"🔒 {conf}/6"
-    elif conf >= 2:
-        return f"💡 {conf}/6"
-    else:
-        return f"⛔ {conf}/6"
+    return f"{conf}/6"
 
 
 def playoff_caution(aw_po, hm_po, aw_label, hm_label):
@@ -122,28 +117,28 @@ def playoff_caution(aw_po, hm_po, aw_label, hm_label):
     low_stakes = {"clinched", "eliminated"}
 
     if a_status == "fighting" and h_status == "fighting":
-        return "✓ both fighting — max 1p defensive intensity, favors u2.5"
+        return "both fighting — max 1p defensive intensity, favors u2.5"
     if a_status in low_stakes and h_status in low_stakes:
-        return f"⚠ meaningless game ({a_status}+{h_status}) — starter rest risk, high variance"
+        return f"meaningless game ({a_status}+{h_status}) — starter rest risk, high variance"
     # mixed: one fighting, one locked in
     if a_status == "fighting":
         other, other_label = h_status, hm_label
     else:
         other, other_label = a_status, aw_label
     if other == "clinched":
-        return f"⚠ {other_label} clinched — possible starter rest, less urgency"
-    return f"⚠ {other_label} eliminated — may be loose/unmotivated, variance risk"
+        return f"{other_label} clinched — possible starter rest, less urgency"
+    return f"{other_label} eliminated — may be loose/unmotivated, variance risk"
 
 
 def playoff_tag(m, leading_sep=True):
-    """compact playoff tag: '🏆 g4 · col 3-0 lak' or '🏆 g1 (capped)'. empty for non-playoff."""
+    """compact playoff tag: 'g4 · col 3-0 lak' or 'g1 (capped)'. empty for non-playoff."""
     if not m.get("is_playoff"):
         return ""
     gn = m.get("series_game_num")
     si = m.get("series_info") or {}
     top, bot = si.get("top_seed"), si.get("bottom_seed")
     top_w, bot_w = si.get("top_wins", 0), si.get("bottom_wins", 0)
-    base = f"🏆 g{gn}" if gn else "🏆"
+    base = f"g{gn}" if gn else "playoff"
     if gn == 1:
         base += " (capped)"
     elif gn and top and bot and (top_w or bot_w):
@@ -187,7 +182,7 @@ def format_postmortem(entries, yesterday, postmortem_text):
     date_label = dt.strftime("%b %-d").lower()
 
     out = []
-    out.append(f"## 📋 yesterday — {date_label}, {dt.year}")
+    out.append(f"## yesterday — {date_label}, {dt.year}")
     out.append("")
 
     if not yest:
@@ -206,8 +201,8 @@ def format_postmortem(entries, yesterday, postmortem_text):
     # parlay legs first (the money), then the rest compactly
     if picks_y:
         for e in picks_y:
-            icon = "✅" if e["result"] == "win" else "❌"
-            out.append(f'{icon} **{e["game"]}** — {e["result"]} '
+            icon = "✓" if e["result"] == "win" else "✗"
+            out.append(f'{icon} {e["game"]} — {e["result"]} '
                        f'(1p {e["actual_1p_total"]}, {e["confidence"]}/6)')
         out.append("")
 
@@ -215,13 +210,13 @@ def format_postmortem(entries, yesterday, postmortem_text):
     if len(picks_y) >= 2:
         top2 = parlay_legs_for_date(picks_y)
         parlay_hit = all(e["result"] == "win" for e in top2)
-        icon = "✅" if parlay_hit else "❌"
+        icon = "✓" if parlay_hit else "✗"
         word = "win" if parlay_hit else "loss"
         losers = [e["game"] for e in top2 if e["result"] == "loss"]
         if parlay_hit:
-            out.append(f"**parlay: {icon} {word}**")
+            out.append(f"parlay: {icon} {word}")
         else:
-            out.append(f"**parlay: {icon} {word}** ({', '.join(losers)} busted)")
+            out.append(f"parlay: {icon} {word} ({', '.join(losers)} busted)")
     elif len(picks_y) == 0:
         out.append("no parlay — no games hit ≥4/6")
     else:
@@ -229,9 +224,9 @@ def format_postmortem(entries, yesterday, postmortem_text):
     out.append("")
 
     # hm / avoid one-liners (informational — not money)
-    for label, sub in (("💡 hm", hm_y), ("⛔ avoid", avoid_y)):
+    for label, sub in (("hm", hm_y), ("avoid", avoid_y)):
         if sub:
-            bits = [f'{e["game"]} {"✅" if e["result"] == "win" else "❌"} '
+            bits = [f'{e["game"]} {"✓" if e["result"] == "win" else "✗"} '
                     f'(1p {e["actual_1p_total"]})' for e in sub]
             out.append(f'{label}: {" · ".join(bits)}')
     if hm_y or avoid_y:
@@ -258,11 +253,11 @@ def format_table(team_abbr, team_data, line_lookup):
     rows.append("|----|-------|-----|-----|-------|-------|------|-----|------|----|---|")
     for i, g in enumerate(team_data["games"]):
         date = g["date"][5:]
-        u25 = "✅" if g["u25"] else "❌"
+        u25 = "✓" if g["u25"] else "✗"
         line_str = format_line(get_line_for_game(line_lookup, team_abbr, g))
         gl = team_data["goalie_labels"][i]
         rows.append(f'| {i+1:<2} | {date:<5} | {g["opp"]:<3} | {g["h_a"]:^3} '
-                    f'| {g["score"]:^5} | {g["total_1p"]:^5} | {u25}   '
+                    f'| {g["score"]:^5} | {g["total_1p"]:^5} | {u25:^4} '
                     f'| {g["wl"]:<3} | {line_str:<4} | {g["full_total"]:<2} | {gl} |')
     return "\n".join(rows)
 
@@ -286,16 +281,16 @@ def format_game(m, teams, line_lookup, injuries, context_map):
     if m.get("is_playoff"):
         gn = m.get("series_game_num")
         if gn == 1:
-            playoff_detail_note = "🏆 playoff game 1 — confidence capped at 3/6 (g1 u2.5: 63.3% last 2 sns, below baseline)"
+            playoff_detail_note = "playoff game 1 — confidence capped at 3/6 (g1 u2.5: 63.3% last 2 sns, below baseline)"
         elif gn:
-            playoff_detail_note = f"🏆 playoff game {gn}"
+            playoff_detail_note = f"playoff game {gn}"
     if m.get("line_missing"):
-        cap_note = "📵 no sourced line — capped at 3/6 (fail-closed line gate)"
+        cap_note = "no sourced line — capped at 3/6 (fail-closed line gate)"
         playoff_detail_note = f"{playoff_detail_note} · {cap_note}" if playoff_detail_note else cap_note
 
     # ── summary line (visible when collapsed) ──
     summary_parts = [
-        f"<strong>{away_l} @ {home_l}</strong>",
+        f"{away_l} @ {home_l}",
         f"{tier_label(conf)}",
         f"line {line_val}",
         f"{f['goalie_pair']}",
@@ -310,7 +305,7 @@ def format_game(m, teams, line_lookup, injuries, context_map):
     out.append("")
 
     # ── verdict strip ──
-    out.append(f"> **{conf_dots(conf)}  {conf}/6** — {factor_str(f)}")
+    out.append(f"> {conf}/6 — {factor_str(f)}")
     if playoff_detail_note:
         out.append(f">")
         out.append(f"> {playoff_detail_note}")
@@ -323,10 +318,10 @@ def format_game(m, teams, line_lookup, injuries, context_map):
     r15_dedup = f" · {m.get('r15_shared', 0)} shared" if m.get("r15_shared") else ""
     out.append("| metric | value |")
     out.append("|---|---|")
-    out.append(f"| total line | **{line_val}** |")
+    out.append(f"| total line | {line_val} |")
     out.append(f"| combined r5 | {m['comb_r5']}/{r5_n} ({m['comb_r5_pct']}%){r5_dedup} |")
-    out.append(f"| combined r15 | {m['comb_r15']}/{r15_n} ({m['comb_r15_pct']}%){r15_dedup} _(unscored)_ |")
-    out.append(f"| start | {start_time_et(m['start_utc'])}{' ☀️ day game (+1)' if m.get('is_day_game') else ''} |")
+    out.append(f"| combined r15 | {m['comb_r15']}/{r15_n} ({m['comb_r15_pct']}%){r15_dedup} (unscored) |")
+    out.append(f"| start | {start_time_et(m['start_utc'])}{' · day game (+1)' if m.get('is_day_game') else ''} |")
     out.append("")
 
     # ── teams ──
@@ -336,7 +331,7 @@ def format_game(m, teams, line_lookup, injuries, context_map):
         is_home_side = t["tonight_ha"] == "h"
         venue_lbl = "home" if is_home_side else "road"
         v_pct = t["venue_u25"] / t["venue_total"] * 100 if t["venue_total"] > 0 else 0.0
-        out.append(f"### 🏒 {team_l} — {goalie} ({cls})")
+        out.append(f"### {team_l} — {goalie} ({cls})")
         out.append("")
         out.append(f"`{streak_strip(t['games'])}`  ← newest")
         out.append("")
@@ -357,8 +352,8 @@ def format_game(m, teams, line_lookup, injuries, context_map):
 
     out.append("### context")
     out.append("")
-    out.append(f"- **h2h:** {h2h_str}")
-    out.append(f"- **b2b:** {b2b_str}")
+    out.append(f"- h2h: {h2h_str}")
+    out.append(f"- b2b: {b2b_str}")
 
     # playoff games: suppress regular-season standings/caution (every playoff team is "clinched"
     # by definition, so the clinched/eliminated caution fires incorrectly). use series state instead.
@@ -372,7 +367,7 @@ def format_game(m, teams, line_lookup, injuries, context_map):
             series_str = f"{rd_label}, game {gn} — {top.lower()} {top_w}-{bot_w} {bot.lower()}"
         else:
             series_str = f"{rd_label}, game {gn} (series tied 0-0)"
-        out.append(f"- **series:** {series_str}")
+        out.append(f"- series: {series_str}")
     else:
         info = m.get("info", {})
         aw_po = info.get("aw_playoff", {})
@@ -382,10 +377,10 @@ def format_game(m, teams, line_lookup, injuries, context_map):
             if po:
                 po_parts.append(f"{abbr} {po.get('pts', '?')}pts/{po.get('remaining', '?')}left ({po.get('status', '?')})")
         playoff_str = " · ".join(po_parts) if po_parts else "n/a"
-        out.append(f"- **playoff race:** {playoff_str}")
+        out.append(f"- playoff race: {playoff_str}")
         caution = playoff_caution(aw_po, hm_po, away_l, home_l)
         if caution:
-            out.append(f"- **caution:** {caution.lstrip('⚠ ').strip()}")
+            out.append(f"- caution: {caution}")
 
     # injuries + context (only if present)
     inj_a = injuries.get(away, "")
@@ -394,22 +389,22 @@ def format_game(m, teams, line_lookup, injuries, context_map):
     if inj_a: inj_parts.append(f"{away_l}: {inj_a}")
     if inj_h: inj_parts.append(f"{home_l}: {inj_h}")
     if inj_parts:
-        out.append(f"- **injuries:** {' · '.join(inj_parts)}")
+        out.append(f"- injuries: {' · '.join(inj_parts)}")
     ctx = context_map.get(f"{away}@{home}", "")
     if ctx:
-        out.append(f"- **notes:** {ctx}")
+        out.append(f"- notes: {ctx}")
     out.append("")
 
     # ── goalie detail ──
-    ac = "✓ confirmed" if m["aw_confirmed"] else "✗ unconfirmed"
-    hc = "✓ confirmed" if m["hm_confirmed"] else "✗ unconfirmed"
-    elite_a = " ★" if m.get("aw_elite") else ""
-    elite_h = " ★" if m.get("hm_elite") else ""
+    ac = "confirmed" if m["aw_confirmed"] else "unconfirmed"
+    hc = "confirmed" if m["hm_confirmed"] else "unconfirmed"
+    elite_a = " (elite)" if m.get("aw_elite") else ""
+    elite_h = " (elite)" if m.get("hm_elite") else ""
 
     out.append("### goalies")
     out.append("")
-    out.append(f"- **{away_l}:** {m['aw_goalie']}{elite_a} — {m['aw_goalie_cls']} ({m['aw_goalie_share']:.0f}% starts, sv% {m['aw_sv_pct']:.4f}) · {ac}")
-    out.append(f"- **{home_l}:** {m['hm_goalie']}{elite_h} — {m['hm_goalie_cls']} ({m['hm_goalie_share']:.0f}% starts, sv% {m['hm_sv_pct']:.4f}) · {hc}")
+    out.append(f"- {away_l}: {m['aw_goalie']}{elite_a} — {m['aw_goalie_cls']} ({m['aw_goalie_share']:.0f}% starts, sv% {m['aw_sv_pct']:.4f}) · {ac}")
+    out.append(f"- {home_l}: {m['hm_goalie']}{elite_h} — {m['hm_goalie_cls']} ({m['hm_goalie_share']:.0f}% starts, sv% {m['hm_sv_pct']:.4f}) · {hc}")
     out.append("")
 
     out.append("</details>")
@@ -444,43 +439,43 @@ def format_recommendation(matchups, record):
 
     if len(picks) >= 2:
         parlay_legs = sorted(picks, key=pick_sort_key)[:2]
-        out.append("## 🔒 tonight's parlay — 1p under 2.5 · 2 legs")
+        out.append("## tonight's parlay — 1p under 2.5, 2 legs")
         out.append("")
         for i, p in enumerate(parlay_legs, 1):
             a, h = p["away"].lower(), p["home"].lower()
             fct = p["factors"]
             tags = game_tags(p)
-            out.append(f"### leg {i} · {a} @ {h} — {p['confidence']}/6 {conf_dots(p['confidence'])}")
+            out.append(f"### leg {i} — {a} @ {h} ({p['confidence']}/6)")
             out.append("")
-            out.append(f"> {start_time_et(p['start_utc'])} · line **{format_line(p['total_line'])}** · "
+            out.append(f"> {start_time_et(p['start_utc'])} · line {format_line(p['total_line'])} · "
                        f"{fct['goalie_pair']}{(' · ' + tags) if tags else ''}")
             out.append(f"> {factor_str(fct)}")
             caution = leg_caution(p)
             if caution:
-                out.append(f"> ⚠ {caution.lstrip('✓⚠ ').strip()}")
+                out.append(f"> note: {caution}")
             out.append("")
         extra = [p for p in picks if p not in parlay_legs]
         hms = extra + hms
 
     elif len(picks) == 1:
-        out.append("## 🚫 no parlay tonight — only 1 game qualifies")
+        out.append("## no parlay tonight — only 1 game qualifies")
         out.append("")
         p = picks[0]
         a, h = p["away"].lower(), p["home"].lower()
         fct = p["factors"]
-        out.append(f"**single-leg watch:** {a} @ {h} — {p['confidence']}/6 {conf_dots(p['confidence'])}")
+        out.append(f"single-leg watch: {a} @ {h} — {p['confidence']}/6")
         out.append(f"> {start_time_et(p['start_utc'])} · line {format_line(p['total_line'])} · "
                    f"{fct['goalie_pair']} · logged as hm (2-leg rule)")
         out.append("")
 
     else:
-        out.append("## 🚫 no play tonight")
+        out.append("## no play tonight")
         out.append("")
 
     if hms:
-        out.append("### 💡 honorable mentions")
+        out.append("### honorable mentions")
         out.append("")
-        out.append("| matchup | conf | line | goalies | |")
+        out.append("| matchup | conf | line | goalies | notes |")
         out.append("|---|---|---|---|---|")
         for m in hms:
             f = m["factors"]
@@ -489,7 +484,7 @@ def format_recommendation(matchups, record):
         out.append("")
 
     if avoids:
-        out.append("### ⛔ avoid")
+        out.append("### avoid")
         out.append("")
         out.append("| matchup | conf | line | reason |")
         out.append("|---|---|---|---|")
@@ -550,16 +545,16 @@ def main():
         record = compute_season_record(all_entries_tmp)
 
         out = [
-            f"# 🏒 nhl 1p u2.5 — {date_label}, {dt.year}",
+            f"# nhl 1p u2.5 — {date_label}, {dt.year}",
             "",
             DIVIDER,
             "",
-            "## 🚫 no play tonight — 0 games scheduled",
+            "## no play tonight — 0 games scheduled",
             "",
-            "## 📊 season — v4",
+            "## season — v4",
             "",
-            f"**parlays {record['parlay_w']}-{record['parlay_l']} "
-            f"({pct(record['parlay_w'], record['parlay_l'])}%)** · "
+            f"parlays {record['parlay_w']}-{record['parlay_l']} "
+            f"({pct(record['parlay_w'], record['parlay_l'])}%) · "
             f"legs {record['leg_w']}-{record['leg_l']} ({pct(record['leg_w'], record['leg_l'])}%) · "
             f"5+/6: {record['c5_w']}-{record['c5_l']}",
             "",
@@ -604,7 +599,7 @@ def main():
     # ── masthead ──
     n_games = len(data["matchups"])
     model_v = data.get("model_version", "v4")
-    out.append(f"# 🏒 nhl 1p u2.5 — {date_label}, {dt.year}")
+    out.append(f"# nhl 1p u2.5 — {date_label}, {dt.year}")
     out.append("")
     out.append(DIVIDER)
     out.append("")
@@ -622,10 +617,10 @@ def main():
     out.extend(format_postmortem(all_entries, yesterday, postmortem_text))
 
     # ── season record ──
-    out.append("## 📊 season — v4")
+    out.append("## season — v4")
     out.append("")
-    out.append(f"**parlays {record['parlay_w']}-{record['parlay_l']} "
-               f"({pct(record['parlay_w'], record['parlay_l'])}%)** · "
+    out.append(f"parlays {record['parlay_w']}-{record['parlay_l']} "
+               f"({pct(record['parlay_w'], record['parlay_l'])}%) · "
                f"legs {record['leg_w']}-{record['leg_l']} ({pct(record['leg_w'], record['leg_l'])}%) · "
                f"5+/6: {record['c5_w']}-{record['c5_l']} · "
                f"hm {record['hm_w']}-{record['hm_l']} · avoid {record['av_w']}-{record['av_l']}")
@@ -635,11 +630,11 @@ def main():
 
     # ── ice critic review (only when there's a 2-leg parlay) ──
     if ice:
-        out.append("## 🧊 ice review")
+        out.append("## ice review")
         out.append("")
         verdict = ice.get("verdict", "").strip()
         if verdict:
-            out.append(f"**verdict:** {verdict.lower()}")
+            out.append(f"verdict: {verdict.lower()}")
             out.append("")
         per_leg = ice.get("per_leg") or []
         for leg in per_leg:
@@ -648,7 +643,7 @@ def main():
             note = leg.get("note") or leg.get("notes") or ""
             if not (game or call or note):
                 continue
-            out.append(f"- {game} — **{call}**{(' · ' + note) if note else ''}")
+            out.append(f"- {game} — {call}{(' · ' + note) if note else ''}")
         if per_leg:
             out.append("")
         concerns = ice.get("concerns", "").strip()
@@ -658,15 +653,15 @@ def main():
             out.append("")
         override = ice.get("override", "").strip()
         if override:
-            out.append(f"**override:** {override}")
+            out.append(f"override: {override}")
             out.append("")
         out.append("---")
         out.append("")
 
     # ── per-game analysis ──
-    out.append("## 🔬 game details")
+    out.append("## game details")
     out.append("")
-    out.append("_click any game to expand — sorted by confidence_")
+    out.append("click any game to expand — sorted by confidence")
     out.append("")
     for m in data["matchups"]:
         out.extend(format_game(m, data["teams"], line_lookup, injuries, context_map))
@@ -674,8 +669,7 @@ def main():
     # ── footer ──
     out.append(DIVIDER)
     out.append("")
-    out.append(f"_{model_v} · r5 + day + goalie + line · /6 scale · pick ≥4 · "
-               f"hm 2-3 · avoid <2 · 1p score format gf-ga · no juice tracked_")
+    out.append(f"{model_v} · r5 + day + goalie + line · /6 scale · pick ≥4 · hm 2-3 · avoid <2")
     out.append("")
 
     full_output = "\n".join(out)
