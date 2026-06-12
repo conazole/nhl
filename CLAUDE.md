@@ -2,25 +2,29 @@
 
 real money is at stake — accuracy over speed. never estimate or guess scores. all output must be in lowercase.
 
-## confidence formula v4.2 (4 factors, /6 scale, playoff-aware)
+## confidence formula v4.3 (4 factors, /6 scale, playoff-aware)
 
-v4 core validated on 1149 games (full 2025-26 season with pre-game lines). v4.1 splits backup penalty by partner type (275-game audit, apr 6 2026). v4.2 adds playoff-only overrides (435-game playoff audit + 88-team-series goalie audit, apr 18 2026).
+v4 core validated on 1149 games. v4.1 splits backup penalty by partner type (apr 6 2026). v4.2 adds playoff overrides (apr 18 2026). v4.3 (jun 12 2026) re-validated every factor on a 1393-game point-in-time season dataset (chronological train/holdout split at feb 15, wilson CIs — `research/build_dataset.py` + `factor_lab.py` + `backtest_v43.py`) and replaced the r15 factor with the day-game factor.
 
 | factor | criteria | points |
 | --- | --- | --- |
-| combined r5 u2.5% | <70%: 0, 70-79%: +1, ≥80%: +2 | 0-2 |
-| combined r15 u2.5% | <70%: 0, ≥70%: +1 | 0-1 |
+| combined r5 u2.5% (de-duped) | <70%: 0, 70-79%: +1, ≥80%: +2 | 0-2 |
+| day game | local start before 5:00pm ET: +1, else 0 | 0-1 |
 | goalie matchup type | starter+starter: +2, starter+tandem OR backup+starter: +1, tandem+tandem: 0, backup+tandem: -1, backup+backup: -1 | -1 to +2 |
 | total line | ≤5.5: +1, ≤6.0: 0, ≥6.5: -1 | -1 to +1 |
 
 - pick threshold: ≥4/6. honorable mention: 2-3/6. avoid: <2/6.
+- why r15 was dropped (v4.3): +1.6pp full season, INVERTED on holdout; its near-free +1 (fired on 63% of games) promoted base-rate games into the pick tier — the 208 picks it added vs the day-swap variant hit 75.0% = exactly base rate. r15 is still computed, logged, displayed, and used in the deterministic tiebreak — it is just NOT scored.
+- why day game was added (v4.3): day games (<5pm ET) hit 83.2% u2.5 (119/143) vs 72.7% prime-time; holds on both sides of the train/holdout split (matinee 81.6%/93.3%, afternoon 81.7%/88.5%). mechanism: routine disruption + the 1p feeling-out process. the old killed "early start" factor used a too-narrow definition (11am/12pm CT only); the real effect spans the whole pre-5pm window.
+- combined r5/r15 are computed over the UNION of both teams' windows — games the two teams played against each other count once, not twice (matters deep in playoff series where most of the window is shared).
 - goalie classification (regular season): full-season starts share from `/v1/club-stats/{team}/20252026/2` — ≥60% starter, 40-59% tandem, <40% backup.
-- v4.1: backup+starter scores +1 (77.4% u2.5, starter anchors). backup+tandem stays -1 (62.0%).
+- v4.1: backup+starter scores +1 (77.4% u2.5, starter anchors). note: the jun 12 point-in-time re-audit found backup+tandem ≈ base rate (74.0%) and tandem+tandem worst (67.4%) under to-date classification — map left unchanged (different classifier population); re-audit next season before any remap.
 - goalie always scores — confirmed flag is informational only, not a scoring gate.
-- killed factors (NOT in scoring): poisson, elite bonus, b2b, context, system profile, penalty rate, early start, standings-status playoff context (mar-jun only, informational display only).
-- all log entries must include `"model": "v4"`.
-- v4 backtest: 64.8% parlays (+6.3pp over v3), 80.5% legs (+3.4pp). perfectly monotonic gradient.
-- v4 starts tracking mar 28 2026. v3 (mar 24-27) and v1/v2 are dead.
+- fail-closed line gate: a game with NO sourced line is capped at 3/6 (can never be a pick) and flagged `line_missing`. wrong line = wrong gate decision; no line = no pick.
+- killed factors (NOT in scoring): r15 (v4.3), poisson, elite bonus, b2b, context, system profile, penalty rate, h2h, venue-split form, day-of-week, rolling 1p goal/sog/xg environments, standings-status playoff context (informational display only).
+- all log entries carry `"model": "v4"` (season-record continuity) plus `"model_version": "v4.3"` and `factors.day`.
+- v4.3 backtest (1393 games, point-in-time): pick tier ≥4 = 83.0% (153 picks), tier ≥5 = 88.1%, conf-4 holdout 83.3%, simulated parlay nights 65.9% at ~23% of slates. v4.2 on the same dataset: 78.3% on 360 picks. volume drops by design — the cut games carried no edge.
+- v4.3 starts tracking jun 12 2026. v4.2 (apr 18 – jun 6) and v4/v4.1 (mar 28 – apr 17) results remain under model "v4". v3/v2/v1 are dead.
 
 ### v4.2 playoff overrides (gameType=3 only — regular season untouched)
 
@@ -32,28 +36,33 @@ v4 core validated on 1149 games (full 2025-26 season with pre-game lines). v4.1 
 
 ## parlay rules
 
-- always 2-leg parlay. top 2 picks by confidence ≥4/6 (tiebreak by r5%).
-- additional qualifying games → honorable mentions, NOT additional legs.
+- always 2-leg parlay. top 2 picks ≥4/6 by the shared deterministic sort key: confidence desc, r5% desc, r15% desc, game string asc (`record.pick_sort_key` — used identically by update_log demotion, format_output display, and season-record scoring).
+- additional qualifying games → honorable mentions, NOT additional legs (update_log demotes 3rd+ qualifiers automatically).
 - if only 1 game qualifies → "no parlay tonight", log as HM.
 - if 0 games qualify → "no play tonight".
 - picks have no `tier` field. HMs have `"tier": "honorable_mention"`. avoids have `"tier": "avoid"`.
 - picks must be deterministic — same data = same picks between runs.
+- season parlay record is scored on the top-2 legs per date (what was actually bet) — `record.compute_season_record`. postponed games resolve as `"void"` and are excluded from all counts.
+- log invariants (checked automatically on every update_log/resolve run): ≤2 untiered picks per date, no unresolved entries older than yesterday, no duplicate (date, game), every pick has a line. investigate any warning immediately.
 
 ## output rules
 
 - all output must be in lowercase — every word, header, label, sentence. no exceptions.
 - never show poisson in any output — it's noise.
-- analysis file uses box-drawing dividers, emojis, ✅/❌, confidence dots — not plain markdown.
-- tables MUST use fixed-width padding for monospace alignment (python f-string formatting).
-- table columns: `#`, `date`, `opp`, `h/a`, `score`, `total`, `u2.5`, `w/l`, `line`, `ft`, `g`.
-- score = 1p score (gf-ga), NOT full-game score. opp values lowercase.
+- **minimalist style (jun 12 2026 — supersedes the old emoji/dots style):** NO markdown headings (#/##/###), NO bold or italics, NO emojis, NO confidence dots. section labels are plain text lines. the only ornaments allowed: one ━ masthead rule, > quote rails, plain ✓/✗ data marks, ← in streak strips.
+- ALL tables are fenced monospace code blocks with space-aligned fixed-width columns (python f-string padding). never markdown table syntax — it renders bold headers.
+- analysis file order: masthead (title line, ━ rule, slate context line) → tonight at a glance → parlay / no-parlay / no-play → honorable mentions → avoid → yesterday + post-mortem → season — v4 → game details (collapsible `<details>` per game, sorted by confidence) → footer (model formula line).
+- at-a-glance columns: game, conf, line, pair, start, notes. goalie pairs abbreviated in ALL display: s+s, s+t, b+s, t+t, b+t, b+b (log keeps full words).
+- parlay legs carry pre-bet decision info, one quote block per leg, in order: time · line · pair · tags / goalies confirmation line / factor strip / season record for that confidence tier / risk line (computed from factor math: what late line move or backup swap exits pick range) / note (series state or motivation caution).
+- 15-game table columns: `#`, `date`, `opp`, `h/a`, `score`, `total`, `u2.5`, `w/l`, `line`, `ft`, `g`. score = 1p score (gf-ga), NOT full-game. u2.5 column plain ✓/✗. opp lowercase.
+- each team block: goalie line (`uta — vejmelka (starter) · last-5 1p ga 1,0,2,1,0 · season sv% .912`), then the table code block with the u2.5 streak strip (✓✓✗✓✓ grouped in 5s, newest first) at the top.
 - w/l is informational (no analytical significance).
 - line = pre-game total from bookmakers. ft = full-game final total. g = s (starter) or b (backup).
-- season record: only show v4 (latest model), not combined or legacy.
+- season record: only show v4 (latest model line), not combined or legacy.
 - sort games by confidence level, highest first.
-- terminal: show FULL detailed analysis — 15-game tables, all metrics, confidence breakdowns.
+- terminal: show FULL detailed analysis — same string as the saved file.
 - save full analysis to `analysis_{YYYY-MM-DD}.md`. delete previous day's file.
-- playoff context + caution: every game block must show playoff status for both teams AND a caution line flagging the motivation/lineup risk (both fighting = favorable, clinched/eliminated mix = rest/variance risk). informational only, NOT in scoring. picks email must flag caution for each parlay leg.
+- playoff context + caution: every game block must show series state (playoffs) or playoff-race status + caution line (regular season — both fighting = favorable, clinched/eliminated mix = rest/variance risk). informational only, NOT in scoring. parlay legs must carry their caution as the `note:` line.
 
 ## email rules
 
@@ -124,7 +133,7 @@ cd /Users/raz/claude/nhl && python3 resolve_results.py {TARGET_DATE}
 cd /Users/raz/claude/nhl && python3 prefetch.py {TARGET_DATE}
 ```
 
-resolve_results.py: resolves TARGET_DATE-1, updates picks_log.jsonl, computes v4 record.
+resolve_results.py: resolves ALL unresolved dates < TARGET_DATE (sweep — gap days can never dangle), voids postponed games, updates picks_log.jsonl, computes v4 record (top-2 parlay scoring), and emits `invariant_warnings` — investigate any warning immediately.
 prefetch.py: fetches goalies (dfo), lines (ESPN+Pinnacle), flags discrepancies. outputs `goalies_engine` + `lines` dicts.
 
 ### step 2: review + postmortem
@@ -240,12 +249,15 @@ notable changes (model updates, architecture changes, new rules, killed factors,
 - never write inline python for result resolution, formatting, or log updates — use the pipeline scripts.
 - never write ad-hoc python scripts — use run_analysis.py. edit it if needed.
 - never read engine's raw JSON output manually — format_output.py parses it.
-- never override confidence scores — computed by run_analysis.py using the v4 formula.
+- never override confidence scores — computed by run_analysis.py using the v4.3 formula.
+- never hand-edit picks_log.jsonl — pipeline scripts only. one-off migrations live in `research/` with verification + audit trail (see `research/migrate_2026_06_12_parlay_integrity.py` for the pattern).
+- never reintroduce display decoration (emojis, bolds, headings, dots) — minimalist style is a user requirement (jun 12 2026).
 
 ## model validation
 
 - moneypuck: `https://peter-tanner.com/moneypuck/downloads/shots_2025.zip` — for xG context only, not in confidence scoring.
-- what to watch: does ≥4/6 threshold maintain strong leg accuracy? does the 6.5 gate hold? does 6.0 stay closer to 5.5 than to 6.5? does always-score goalie improve pick volume without sacrificing accuracy?
+- reproducible backtest: `research/build_dataset.py` (point-in-time season table) → `research/factor_lab.py` (per-factor train/holdout) → `research/backtest_v43.py` (variant comparison). re-run at season start on the new season's data before trusting v4.3 weights.
+- what to watch (v4.3): does the day-game factor hold next season (this season n=143)? does conf-4 stay ≥75%? is pick volume (~2-3 parlay nights/week) acceptable? does the 6.5 gate hold? g1 cap — live g1s running 73.3% vs the 63.3% audit basis; retire the cap if it keeps tracking the pooled 72% instead. goalie map — re-audit backup+tandem (-1) and tandem+tandem (0) with point-in-time classification.
 
 ## api reference (free, no auth)
 

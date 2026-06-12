@@ -23,13 +23,16 @@ from datetime import datetime
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_PATH = os.path.join(os.path.dirname(SCRIPT_DIR), "picks_log.jsonl")
 
-# baselines from v4 original validation (1149 games, mar 28 2026)
+# baselines from the v4.3 point-in-time backtest (1393 games, jun 12 2026 —
+# research/backtest_v43.py). the previous numbers (80.5/92.0/61.8/77.3/73.0)
+# came from the in-sample mar-28 validation and included an unsourced 92%
+# that sat one bad week from a false drift alert.
 BASELINE = {
-    "leg_rate": 80.5,     # all picks (c>=4) u2.5 rate
-    "c5_rate": 92.0,      # 5+/6 specifically
-    "hm_rate": 61.8,      # honorable mentions
-    "avoid_rate": 77.3,   # avoid correctly went over, or solidly under baseline
-    "base_rate": 73.0,    # league-wide 1p u2.5 rate
+    "leg_rate": 83.0,     # pick tier (c>=4) u2.5 rate
+    "c5_rate": 88.1,      # tier >=5 (backtest n=42 — thin; expect noise)
+    "hm_rate": 74.5,      # conf 2-3
+    "avoid_rate": 70.2,   # conf 0-1
+    "base_rate": 74.9,    # league-wide 1p u2.5 (full season incl playoffs)
 }
 DRIFT_THRESHOLD = 5.0   # pp gap that triggers alert
 WARN_THRESHOLD = 2.5    # pp gap that triggers warning

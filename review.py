@@ -154,10 +154,14 @@ def analyze(entries, last_days=None):
     conf4_t = conf4["w"] + conf4["l"]
     if conf4_t >= 5:
         conf4_r = 100 * conf4["w"] / conf4_t
-        if conf4_r < 65:
-            out(f"\n  {YELLOW}⚠ 4/6 threshold tier at {conf4_r:.0f}% — weakest pick tier. monitor with v4.1 changes.{RESET}")
+        # honest thresholds: ~75% = base rate (a pick tier at base rate adds
+        # nothing), 81% = v4.3 backtest expectation for conf-4
+        if conf4_r < 75:
+            out(f"\n  {RED}⚠ 4/6 tier at {conf4_r:.0f}% — at/below the ~75% base rate. the threshold tier is adding nothing.{RESET}")
+        elif conf4_r < 80:
+            out(f"\n  {YELLOW}⚠ 4/6 tier at {conf4_r:.0f}% — above base but under the 81% v4.3 backtest expectation.{RESET}")
         else:
-            out(f"\n  {GREEN}✓ 4/6 threshold tier at {conf4_r:.0f}% — holding well.{RESET}")
+            out(f"\n  {GREEN}✓ 4/6 tier at {conf4_r:.0f}% — tracking the v4.3 backtest.{RESET}")
 
     # ── tier accuracy ──────────────────────────────
     section("tier accuracy")

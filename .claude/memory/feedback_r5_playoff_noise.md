@@ -10,7 +10,7 @@ the r5 factor (last 5 games, combined u2.5%) becomes less reliable for playoff p
 
 **how to apply:**
 - deterministic model still stands — r5 is still in the formula and picks don't get overridden.
-- but when r5 and r15 disagree on a playoff pick, weight r15 heavier in commentary/ice brief (r15 is more robust to motivational swings, larger sample).
-- include this caveat in analysis commentary for playoff picks, especially for g1/g2 where the r5 window is mostly pre-playoff games.
-- revalidation (v4.3 candidate): test whether r5 should be replaced with "last 5 meaningful games" (excluding games where either team was mathematically eliminated, tanking, or had clinched w/ nothing to play for). add to weekly review.py checklist.
-- this fades over time — as a playoff run progresses, r5 rolls forward into playoff-only games. by r1 g5 most teams' r5 will be 4-5 playoff games. concern is highest in r1 g1-g3.
+- update (jun 12 2026, [[project-v43-model]]): r15 is no longer SCORED (failed holdout validation), so "weight r15 heavier" now applies only to postmortem/commentary framing, not to any score. the r5 late-reg-season dilution caution itself remains valid for early playoff rounds.
+- include this caveat in analysis commentary for playoff picks, especially g1/g2 where the r5 window is mostly pre-playoff games (g1 is also hard-capped at 3/6 by v4.2).
+- open research item: test "last 5 meaningful games" (excluding eliminated/tanking/clinched-idle opponents) as an r5 variant on the point-in-time dataset (research/build_dataset.py) before next season.
+- this fades over time — by r1 g5 most teams' r5 is playoff-only games. concern is highest in r1 g1-g3.
