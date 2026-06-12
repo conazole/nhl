@@ -38,7 +38,8 @@ def load_resolved(model="v4", last_days=None):
             e = json.loads(line)
             if e.get("model") != model:
                 continue
-            if not e.get("result"):
+            # only win/loss count — "void" (postponed/rescheduled) is excluded
+            if e.get("result") not in ("win", "loss"):
                 continue
             if cutoff and e["date"] < cutoff:
                 continue

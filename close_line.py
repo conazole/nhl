@@ -27,39 +27,13 @@ intended cron (ET, first puck drop usually 7pm → fire 6:30pm):
     30 18 * * *  python3 /Users/raz/claude/nhl/close_line.py $(date +\\%Y-\\%m-\\%d)
 """
 
-import json, sys, os, argparse, tempfile, shutil
+import json, sys, argparse
 from datetime import datetime, timezone
 
 # reuse prefetch's line fetchers — single source of truth for scraping logic
 sys.path.insert(0, "/Users/raz/claude/nhl")
 from prefetch import fetch_espn_lines, fetch_pinnacle_lines, reconcile_lines  # noqa: E402
-
-LOG_PATH = "/Users/raz/claude/nhl/picks_log.jsonl"
-
-
-def read_log():
-    entries = []
-    with open(LOG_PATH) as f:
-        for line_no, line in enumerate(f, 1):
-            if not line.strip():
-                continue
-            try:
-                entries.append(json.loads(line))
-            except json.JSONDecodeError as e:
-                print(f"warning: line {line_no} invalid json, skipping: {e}", file=sys.stderr)
-    return entries
-
-
-def write_log(entries):
-    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(LOG_PATH), suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w") as f:
-            for e in entries:
-                f.write(json.dumps(e) + "\n")
-        shutil.move(tmp, LOG_PATH)
-    except Exception:
-        os.unlink(tmp)
-        raise
+from record import read_log, write_log  # noqa: E402
 
 
 def game_key_from_entry(game_str):

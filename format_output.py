@@ -21,6 +21,8 @@ import json, sys, argparse
 from datetime import datetime, timedelta
 from collections import defaultdict
 
+from record import compute_season_record, pick_sort_key, parlay_legs_for_date
+
 # ── paths ──
 LOG_PATH = "/Users/raz/claude/nhl/picks_log.jsonl"
 
@@ -114,44 +116,15 @@ def get_line_for_game(lookup, team_abbr, game):
     return lookup.get((game["date"], game_str))
 
 
-# ── season record (v4) ──
-
-def compute_season_record(entries):
-    v4_picks = [e for e in entries if e.get("model") == "v4" and "result" in e and "tier" not in e]
-    v4_hm = [e for e in entries if e.get("model") == "v4" and "result" in e and e.get("tier") == "honorable_mention"]
-    v4_avoid = [e for e in entries if e.get("model") == "v4" and "result" in e and e.get("tier") == "avoid"]
-
-    parlay_dates = defaultdict(list)
-    for e in v4_picks:
-        parlay_dates[e["date"]].append(e["result"])
-    parlay_w = sum(1 for legs in parlay_dates.values() if len(legs) >= 2 and all(r == "win" for r in legs))
-    parlay_l = sum(1 for legs in parlay_dates.values() if len(legs) >= 2 and any(r == "loss" for r in legs))
-
-    leg_w = sum(1 for e in v4_picks if e["result"] == "win")
-    leg_l = sum(1 for e in v4_picks if e["result"] == "loss")
-    c4_w = sum(1 for e in v4_picks if e["result"] == "win" and e.get("confidence", 0) >= 4)
-    c4_l = sum(1 for e in v4_picks if e["result"] == "loss" and e.get("confidence", 0) >= 4)
-    c5_w = sum(1 for e in v4_picks if e["result"] == "win" and e.get("confidence", 0) >= 5)
-    c5_l = sum(1 for e in v4_picks if e["result"] == "loss" and e.get("confidence", 0) >= 5)
-    hm_w = sum(1 for e in v4_hm if e["result"] == "win")
-    hm_l = sum(1 for e in v4_hm if e["result"] == "loss")
-    av_w = sum(1 for e in v4_avoid if e["result"] == "win")
-    av_l = sum(1 for e in v4_avoid if e["result"] == "loss")
-
-    return {
-        "parlay_w": parlay_w, "parlay_l": parlay_l,
-        "leg_w": leg_w, "leg_l": leg_l,
-        "c4_w": c4_w, "c4_l": c4_l,
-        "c5_w": c5_w, "c5_l": c5_l,
-        "hm_w": hm_w, "hm_l": hm_l,
-        "av_w": av_w, "av_l": av_l,
-    }
+# ── season record (v4) — shared implementation in record.py ──
+# (top-2 parlay scoring + void exclusion; local copy removed jun 12 2026)
 
 
 # ── yesterday's results ──
 
 def format_postmortem(entries, yesterday, postmortem_text):
-    yest = [e for e in entries if e["date"] == yesterday and "result" in e]
+    yest = [e for e in entries
+            if e["date"] == yesterday and e.get("result") in ("win", "loss")]
     picks_y = [e for e in yest if "tier" not in e]
     hm_y = [e for e in yest if e.get("tier") == "honorable_mention"]
     avoid_y = [e for e in yest if e.get("tier") == "avoid"]
@@ -183,12 +156,13 @@ def format_postmortem(entries, yesterday, postmortem_text):
             out.append(f'{icon} {e["game"]} — {e["result"]} (1p: {e["actual_1p_total"]}, {e["confidence"]}/6)')
         out.append("")
 
-    # parlay result
+    # parlay result — scored on the top-2 legs (what was actually bet)
     if len(picks_y) >= 2:
-        parlay_hit = all(e["result"] == "win" for e in picks_y)
+        top2 = parlay_legs_for_date(picks_y)
+        parlay_hit = all(e["result"] == "win" for e in top2)
         icon = "✅" if parlay_hit else "❌"
         word = "win" if parlay_hit else "loss"
-        losers = [e["game"] for e in picks_y if e["result"] == "loss"]
+        losers = [e["game"] for e in top2 if e["result"] == "loss"]
         if parlay_hit:
             out.append(f"parlay: {icon} {word}")
         else:
@@ -384,7 +358,7 @@ def format_recommendation(matchups, record):
     out = []
 
     if len(picks) >= 2:
-        parlay_legs = sorted(picks, key=lambda x: (-x["confidence"], -x["comb_r5_pct"]))[:2]
+        parlay_legs = sorted(picks, key=pick_sort_key)[:2]
         out.append("## 🔒 today's 2-leg parlay")
         out.append("")
         for p in parlay_legs:

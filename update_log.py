@@ -13,36 +13,9 @@ each entry must have at minimum: game, confidence.
 the script adds: date, pick ("1p u2.5"), model ("v4" default).
 """
 
-import json, sys, os, argparse, tempfile, shutil
+import json, sys, os, argparse
 
-LOG_PATH = "/Users/raz/claude/nhl/picks_log.jsonl"
-
-
-def read_log():
-    """read picks_log.jsonl with error handling for malformed lines."""
-    entries = []
-    with open(LOG_PATH, "r") as f:
-        for line_no, line in enumerate(f, 1):
-            if not line.strip():
-                continue
-            try:
-                entries.append(json.loads(line))
-            except json.JSONDecodeError as e:
-                print(f"warning: line {line_no} is invalid JSON, skipping: {e}", file=sys.stderr)
-    return entries
-
-
-def write_log(entries):
-    """write picks_log.jsonl atomically (temp file + rename)."""
-    fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(LOG_PATH), suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w") as f:
-            for e in entries:
-                f.write(json.dumps(e) + "\n")
-        shutil.move(tmp_path, LOG_PATH)
-    except Exception:
-        os.unlink(tmp_path)
-        raise
+from record import read_log, write_log, pick_sort_key, check_invariants
 
 
 def entries_from_engine(data):
@@ -96,17 +69,16 @@ def entries_from_engine(data):
             entry["tier"] = "honorable_mention"
         entries.append(entry)
 
-    # parlay is always 2-leg, top 2 by (confidence, r5%).
+    # parlay is always 2-leg, top 2 by the shared deterministic sort key
+    # (confidence desc, r5% desc, r15% desc, game asc — record.pick_sort_key,
+    # the same ordering format_output displays and compute_season_record scores).
     # n==1: solo qualifier becomes HM (no parlay).
     # n>=3: only top 2 stay as picks (tier=null); the rest become HMs.
     qualifiers = [e for e in entries if e["confidence"] >= 4]
     if len(qualifiers) == 1:
         qualifiers[0]["tier"] = "honorable_mention"
     elif len(qualifiers) >= 3:
-        qualifiers.sort(
-            key=lambda e: (e["confidence"], e.get("combined_recent5_pct", 0)),
-            reverse=True,
-        )
+        qualifiers.sort(key=pick_sort_key)
         for q in qualifiers[2:]:
             q["tier"] = "honorable_mention"
 
@@ -222,7 +194,14 @@ def main():
     # write back (atomic)
     write_log(kept)
 
-    result = {"removed": removed, "added": added, "total": len(kept)}
+    # post-write health check — catches 2-leg violations / dangling dates
+    # immediately instead of months later (see audit, jun 12 2026)
+    warnings = check_invariants(kept, before_date=target_date)
+    for w in warnings:
+        print(f"invariant warning: {w}", file=sys.stderr)
+
+    result = {"removed": removed, "added": added, "total": len(kept),
+              "invariant_warnings": warnings}
     print(json.dumps(result))
 
 

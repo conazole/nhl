@@ -44,7 +44,8 @@ def load_resolved(last_n=100):
             e = json.loads(line)
             if e.get("model") != "v4":
                 continue
-            if not e.get("result"):
+            # only win/loss count — "void" (postponed) is excluded
+            if e.get("result") not in ("win", "loss"):
                 continue
             entries.append(e)
     entries.sort(key=lambda e: e["date"], reverse=True)

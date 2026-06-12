@@ -24,11 +24,12 @@ output JSON schema:
 }
 """
 
-import json, sys, os, urllib.request, argparse, tempfile, shutil
+import json, sys, urllib.request, argparse
 from datetime import datetime, timedelta
-from collections import defaultdict
 
-LOG_PATH = "/Users/raz/claude/nhl/picks_log.jsonl"
+from record import (read_log, write_log, compute_season_record,
+                    parlay_legs_for_date, check_invariants)
+
 SCORE_URL = "https://api-web.nhle.com/v1/score/{}"
 BOXSCORE_URL = "https://api-web.nhle.com/v1/gamecenter/{}/boxscore"
 RIGHTRAIL_URL = "https://api-web.nhle.com/v1/gamecenter/{}/right-rail"
@@ -39,33 +40,6 @@ def api_get(url, timeout=20):
     req = urllib.request.Request(url, headers=HDR)
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read().decode())
-
-
-def read_log():
-    """read picks_log.jsonl with error handling for malformed lines."""
-    entries = []
-    with open(LOG_PATH, "r") as f:
-        for line_no, line in enumerate(f, 1):
-            if not line.strip():
-                continue
-            try:
-                entries.append(json.loads(line))
-            except json.JSONDecodeError as e:
-                print(f"warning: line {line_no} is invalid JSON, skipping: {e}", file=sys.stderr)
-    return entries
-
-
-def write_log(entries):
-    """write picks_log.jsonl atomically (temp file + rename)."""
-    fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(LOG_PATH), suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w") as f:
-            for e in entries:
-                f.write(json.dumps(e) + "\n")
-        shutil.move(tmp_path, LOG_PATH)
-    except Exception:
-        os.unlink(tmp_path)
-        raise
 
 
 def normalize_abbrev(abbrev):
@@ -159,37 +133,63 @@ def get_game_actuals(date_str):
     return out
 
 
-def compute_season_record(entries):
-    """compute v4 season record from all log entries."""
-    v4_picks = [e for e in entries if e.get("model") == "v4" and "result" in e and "tier" not in e]
-    v4_hm = [e for e in entries if e.get("model") == "v4" and "result" in e and e.get("tier") == "honorable_mention"]
-    v4_avoid = [e for e in entries if e.get("model") == "v4" and "result" in e and e.get("tier") == "avoid"]
-
-    parlay_dates = defaultdict(list)
-    for e in v4_picks:
-        parlay_dates[e["date"]].append(e["result"])
-    parlay_w = sum(1 for legs in parlay_dates.values() if len(legs) >= 2 and all(r == "win" for r in legs))
-    parlay_l = sum(1 for legs in parlay_dates.values() if len(legs) >= 2 and any(r == "loss" for r in legs))
-
-    return {
-        "parlay_w": parlay_w,
-        "parlay_l": parlay_l,
-        "leg_w": sum(1 for e in v4_picks if e["result"] == "win"),
-        "leg_l": sum(1 for e in v4_picks if e["result"] == "loss"),
-        "c4_w": sum(1 for e in v4_picks if e["result"] == "win" and e.get("confidence", 0) >= 4),
-        "c4_l": sum(1 for e in v4_picks if e["result"] == "loss" and e.get("confidence", 0) >= 4),
-        "c5_w": sum(1 for e in v4_picks if e["result"] == "win" and e.get("confidence", 0) >= 5),
-        "c5_l": sum(1 for e in v4_picks if e["result"] == "loss" and e.get("confidence", 0) >= 5),
-        "hm_w": sum(1 for e in v4_hm if e["result"] == "win"),
-        "hm_l": sum(1 for e in v4_hm if e["result"] == "loss"),
-        "av_w": sum(1 for e in v4_avoid if e["result"] == "win"),
-        "av_l": sum(1 for e in v4_avoid if e["result"] == "loss"),
-    }
+def resolve_date(entries, date_str):
+    """resolve all unresolved entries for one date against actual scores.
+    mutates entries in place. returns list of per-entry resolution summaries.
+    postponed/missing games are marked result="void" (never deleted — the log
+    is a real-money audit trail)."""
+    actuals = get_game_actuals(date_str)
+    resolved = []
+    for e in entries:
+        if e["date"] != date_str or "result" in e:
+            continue
+        game = e["game"]
+        if game in actuals:
+            act = actuals[game]
+            total = act["total_1p"]
+            e["actual_1p_total"] = total
+            e["away_1p_goals"] = act["away_1p"]
+            e["home_1p_goals"] = act["home_1p"]
+            e["result"] = "win" if total <= 2 else "loss"
+            if act.get("actual_goalie_away"):
+                e["actual_goalie_away"] = act["actual_goalie_away"]
+            if act.get("actual_goalie_home"):
+                e["actual_goalie_home"] = act["actual_goalie_home"]
+            if act.get("referees"):
+                e["referees"] = act["referees"]
+            if act.get("linesmen"):
+                e["linesmen"] = act["linesmen"]
+            if act.get("game_id"):
+                e["game_id"] = act["game_id"]
+            # goalie-prediction-hit: compare predicted vs actual (last-name match).
+            # only set if we recorded a prediction — legacy entries skip this.
+            pred_a = (e.get("aw_goalie") or "").lower()
+            pred_h = (e.get("hm_goalie") or "").lower()
+            act_a = (act.get("actual_goalie_away") or "").lower()
+            act_h = (act.get("actual_goalie_home") or "").lower()
+            if pred_a and pred_h and act_a and act_h:
+                e["goalie_prediction_hit"] = (pred_a == act_a and pred_h == act_h)
+        else:
+            # game not found on this date — postponed/rescheduled/bad key.
+            # void it rather than delete: w/l counts skip voids, but the
+            # entry (and why it produced no result) stays auditable.
+            print(f"warning: {game} not found on {date_str}, marking void", file=sys.stderr)
+            e["result"] = "void"
+            e["void_reason"] = f"game not found on {date_str}"
+        resolved.append({
+            "date": date_str,
+            "game": game,
+            "result": e["result"],
+            "actual_1p_total": e.get("actual_1p_total"),
+            "confidence": e.get("confidence"),
+            "tier": e.get("tier"),
+        })
+    return resolved
 
 
 def main():
-    parser = argparse.ArgumentParser(description="resolve yesterday's results")
-    parser.add_argument("target_date", help="YYYY-MM-DD (yesterday = target - 1)")
+    parser = argparse.ArgumentParser(description="resolve unresolved past results")
+    parser.add_argument("target_date", help="YYYY-MM-DD (resolves all unresolved dates < target)")
     args = parser.parse_args()
 
     target = datetime.strptime(args.target_date, "%Y-%m-%d")
@@ -198,95 +198,66 @@ def main():
     # load log
     entries = read_log()
 
-    # find unresolved entries for yesterday
-    unresolved = [e for e in entries if e["date"] == yesterday and "result" not in e]
+    # sweep ALL unresolved dates strictly before target — not just yesterday.
+    # gap days (no run the morning after) used to leave entries dangling
+    # forever; the apr 9 2026 slate sat unresolved for 2 months and the
+    # season record was missing a winning parlay because of it.
+    unresolved_dates = sorted({
+        e["date"] for e in entries
+        if e["date"] < args.target_date and "result" not in e
+    })
 
-    if not unresolved:
-        # nothing to resolve — just compute record and output
+    if not unresolved_dates:
         record = compute_season_record(entries)
+        warnings = check_invariants(entries, before_date=args.target_date)
         result = {
             "yesterday": yesterday,
+            "resolved_dates": [],
             "resolved": [],
             "parlay_result": "no_games",
             "record": record,
+            "invariant_warnings": warnings,
         }
         print(json.dumps(result))
         return
 
-    # fetch actual scores + starting goalies + home/away 1p splits
-    try:
-        actuals = get_game_actuals(yesterday)
-    except Exception as e:
-        print(json.dumps({"error": f"failed to fetch scores for {yesterday}: {e}"}), file=sys.stderr)
-        sys.exit(1)
-
-    # resolve each entry — we now record:
-    #   actual_1p_total, away_1p_goals, home_1p_goals
-    #   actual_goalie_away, actual_goalie_home (to detect dfo misses)
-    #   goalie_prediction_hit (bool: did our predicted goalies match actuals on both sides?)
     resolved = []
-    for e in entries:
-        if e["date"] == yesterday and "result" not in e:
-            game = e["game"]
-            if game in actuals:
-                act = actuals[game]
-                total = act["total_1p"]
-                e["actual_1p_total"] = total
-                e["away_1p_goals"] = act["away_1p"]
-                e["home_1p_goals"] = act["home_1p"]
-                e["result"] = "win" if total <= 2 else "loss"
-                if act.get("actual_goalie_away"):
-                    e["actual_goalie_away"] = act["actual_goalie_away"]
-                if act.get("actual_goalie_home"):
-                    e["actual_goalie_home"] = act["actual_goalie_home"]
-                if act.get("referees"):
-                    e["referees"] = act["referees"]
-                if act.get("linesmen"):
-                    e["linesmen"] = act["linesmen"]
-                if act.get("game_id"):
-                    e["game_id"] = act["game_id"]
-                # goalie-prediction-hit: compare predicted vs actual (last-name match).
-                # only set if we recorded a prediction — legacy entries skip this.
-                pred_a = (e.get("aw_goalie") or "").lower()
-                pred_h = (e.get("hm_goalie") or "").lower()
-                act_a = (act.get("actual_goalie_away") or "").lower()
-                act_h = (act.get("actual_goalie_home") or "").lower()
-                if pred_a and pred_h and act_a and act_h:
-                    e["goalie_prediction_hit"] = (pred_a == act_a and pred_h == act_h)
-                resolved.append({
-                    "game": game,
-                    "result": e["result"],
-                    "actual_1p_total": total,
-                    "confidence": e.get("confidence"),
-                    "tier": e.get("tier"),
-                })
-            else:
-                # phantom entry — game doesn't exist on this date
-                print(f"warning: {game} not found on {yesterday}, removing from log", file=sys.stderr)
-                e["_remove"] = True
-
-    # remove phantom entries
-    entries = [e for e in entries if not e.get("_remove")]
+    failed_dates = []
+    for d in unresolved_dates:
+        try:
+            resolved.extend(resolve_date(entries, d))
+        except Exception as exc:
+            # a single bad date (api hiccup) must not block the others —
+            # it stays unresolved and the invariant check keeps flagging it.
+            print(f"warning: failed to resolve {d}: {exc}", file=sys.stderr)
+            failed_dates.append(d)
 
     # write updated log (atomic)
     write_log(entries)
 
-    # compute parlay result for yesterday
-    picks_y = [r for r in resolved if r["tier"] is None]
+    # parlay result for yesterday specifically (the postmortem subject) —
+    # scored on the top-2 legs, the same selection format_output displayed.
+    # use the full log entries so the sort key sees confidence + r5 + r15.
+    picks_y = [e for e in entries
+               if e["date"] == yesterday and "tier" not in e
+               and e.get("model") == "v4" and e.get("result") in ("win", "loss")]
     if len(picks_y) >= 2:
-        parlay_result = "win" if all(r["result"] == "win" for r in picks_y) else "loss"
-    elif len(picks_y) == 1:
-        parlay_result = "no_parlay"
+        top2 = parlay_legs_for_date(picks_y)
+        parlay_result = "win" if all(e["result"] == "win" for e in top2) else "loss"
     else:
         parlay_result = "no_parlay"
 
     record = compute_season_record(entries)
+    warnings = check_invariants(entries, before_date=args.target_date)
 
     result = {
         "yesterday": yesterday,
+        "resolved_dates": [d for d in unresolved_dates if d not in failed_dates],
+        "failed_dates": failed_dates,
         "resolved": resolved,
         "parlay_result": parlay_result,
         "record": record,
+        "invariant_warnings": warnings,
     }
     print(json.dumps(result))
 
