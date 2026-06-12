@@ -63,6 +63,12 @@ def factor_str(f, sep=" · "):
 DIVIDER = "━" * 56
 
 
+def section(title):
+    """plain-text section label — no markdown heading syntax, so nothing
+    renders bold/oversized. quiet ── brackets give scannable structure."""
+    return f"── {title} ──"
+
+
 def streak_strip(games, n=15):
     """u2.5 streak as ✓/✗ groups of 5, most recent first: '✓✓✗✓✓  ✗✓✓✓✗'."""
     marks = ["✓" if g["u25"] else "✗" for g in games[:n]]
@@ -84,19 +90,20 @@ def game_tags(m):
 
 
 def at_a_glance(matchups):
-    """one row per game, sorted by confidence — the whole slate in one look."""
+    """one row per game, sorted by confidence — the whole slate in one look.
+    monospace block, space-aligned (markdown table headers render bold)."""
     out = []
-    out.append("## tonight at a glance")
+    out.append(section("tonight at a glance"))
     out.append("")
-    out.append("| game | conf | line | goalies | start | notes |")
-    out.append("|---|---|---|---|---|---|")
+    out.append("```")
+    out.append(f"{'game':<12} {'conf':<5} {'line':<5} {'goalies':<16} {'start':<12} notes")
     for m in matchups:
         g = f"{m['away'].lower()} @ {m['home'].lower()}"
         f = m["factors"]
-        tag = game_tags(m)
-        out.append(f"| {g} | {m['confidence']}/6 "
-                   f"| {format_line(m['total_line'])} | {f['goalie_pair']} "
-                   f"| {start_time_et(m['start_utc'])} | {tag} |")
+        out.append(f"{g:<12} {str(m['confidence']) + '/6':<5} "
+                   f"{format_line(m['total_line']):<5} {f['goalie_pair']:<16} "
+                   f"{start_time_et(m['start_utc']):<12} {game_tags(m)}".rstrip())
+    out.append("```")
     out.append("")
     return out
 
@@ -182,7 +189,7 @@ def format_postmortem(entries, yesterday, postmortem_text):
     date_label = dt.strftime("%b %-d").lower()
 
     out = []
-    out.append(f"## yesterday — {date_label}, {dt.year}")
+    out.append(section(f"yesterday — {date_label}, {dt.year}"))
     out.append("")
 
     if not yest:
@@ -191,7 +198,7 @@ def format_postmortem(entries, yesterday, postmortem_text):
         # still render postmortem text — covers dangling resolutions from
         # >1 day back (e.g. an empty "yesterday" between a game and this run)
         if postmortem_text:
-            out.append("### post-mortem")
+            out.append(section("post-mortem"))
             out.append("")
             for line in postmortem_text.strip().split("\n"):
                 out.append(line)
@@ -234,7 +241,7 @@ def format_postmortem(entries, yesterday, postmortem_text):
 
     # postmortem text
     if postmortem_text:
-        out.append("### post-mortem")
+        out.append(section("post-mortem"))
         out.append("")
         for line in postmortem_text.strip().split("\n"):
             out.append(line)
@@ -245,20 +252,26 @@ def format_postmortem(entries, yesterday, postmortem_text):
 
 # ── 15-game markdown table ──
 
-def format_table(team_abbr, team_data, line_lookup):
-    """15-game table, every cell padded to fixed width so the raw markdown
-    aligns in a terminal as cleanly as the rendered view."""
+def format_table(team_abbr, team_data, line_lookup, streak=None):
+    """15-game table as a fenced monospace block, space-aligned columns —
+    no markdown table syntax, so nothing renders bold. optional streak line
+    sits at the top of the block."""
     rows = []
-    rows.append("| #  | date  | opp | h/a | score | total | u2.5 | w/l | line | ft | g |")
-    rows.append("|----|-------|-----|-----|-------|-------|------|-----|------|----|---|")
+    rows.append("```")
+    if streak:
+        rows.append(streak)
+        rows.append("")
+    rows.append(f"{'#':<3} {'date':<6} {'opp':<4} {'h/a':<4} {'score':<6} "
+                f"{'total':<6} {'u2.5':<5} {'w/l':<4} {'line':<5} {'ft':<3} g")
     for i, g in enumerate(team_data["games"]):
         date = g["date"][5:]
         u25 = "✓" if g["u25"] else "✗"
         line_str = format_line(get_line_for_game(line_lookup, team_abbr, g))
         gl = team_data["goalie_labels"][i]
-        rows.append(f'| {i+1:<2} | {date:<5} | {g["opp"]:<3} | {g["h_a"]:^3} '
-                    f'| {g["score"]:^5} | {g["total_1p"]:^5} | {u25:^4} '
-                    f'| {g["wl"]:<3} | {line_str:<4} | {g["full_total"]:<2} | {gl} |')
+        rows.append(f'{i+1:<3} {date:<6} {g["opp"]:<4} {g["h_a"]:<4} {g["score"]:<6} '
+                    f'{g["total_1p"]:<6} {u25:<5} {g["wl"]:<4} {line_str:<5} '
+                    f'{g["full_total"]:<3} {gl}')
+    rows.append("```")
     return "\n".join(rows)
 
 
@@ -304,24 +317,18 @@ def format_game(m, teams, line_lookup, injuries, context_map):
     out.append(f"<summary>{summary}</summary>")
     out.append("")
 
-    # ── verdict strip ──
-    out.append(f"> {conf}/6 — {factor_str(f)}")
-    if playoff_detail_note:
-        out.append(f">")
-        out.append(f"> {playoff_detail_note}")
-    out.append("")
-
-    # ── key numbers ──
+    # ── verdict + key numbers (one quiet block) ──
     r5_n = m.get("comb_r5_n", 10)
     r15_n = m.get("comb_r15_n", 30)
-    r5_dedup = f" · {m.get('r5_shared', 0)} shared" if m.get("r5_shared") else ""
-    r15_dedup = f" · {m.get('r15_shared', 0)} shared" if m.get("r15_shared") else ""
-    out.append("| metric | value |")
-    out.append("|---|---|")
-    out.append(f"| total line | {line_val} |")
-    out.append(f"| combined r5 | {m['comb_r5']}/{r5_n} ({m['comb_r5_pct']}%){r5_dedup} |")
-    out.append(f"| combined r15 | {m['comb_r15']}/{r15_n} ({m['comb_r15_pct']}%){r15_dedup} (unscored) |")
-    out.append(f"| start | {start_time_et(m['start_utc'])}{' · day game (+1)' if m.get('is_day_game') else ''} |")
+    r5_dedup = f", {m.get('r5_shared', 0)} shared" if m.get("r5_shared") else ""
+    r15_dedup = f", {m.get('r15_shared', 0)} shared" if m.get("r15_shared") else ""
+    out.append(f"> {conf}/6 — {factor_str(f)}")
+    out.append(f"> r5 {m['comb_r5']}/{r5_n} ({m['comb_r5_pct']}%{r5_dedup}) · "
+               f"r15 {m['comb_r15']}/{r15_n} ({m['comb_r15_pct']}%{r15_dedup}, unscored) · "
+               f"line {line_val} · {start_time_et(m['start_utc'])}"
+               f"{' · day game' if m.get('is_day_game') else ''}")
+    if playoff_detail_note:
+        out.append(f"> {playoff_detail_note}")
     out.append("")
 
     # ── teams ──
@@ -331,11 +338,10 @@ def format_game(m, teams, line_lookup, injuries, context_map):
         is_home_side = t["tonight_ha"] == "h"
         venue_lbl = "home" if is_home_side else "road"
         v_pct = t["venue_u25"] / t["venue_total"] * 100 if t["venue_total"] > 0 else 0.0
-        out.append(f"### {team_l} — {goalie} ({cls})")
+        out.append(f"{team_l} — {goalie} ({cls})")
         out.append("")
-        out.append(f"`{streak_strip(t['games'])}`  ← newest")
-        out.append("")
-        out.append(format_table(team, t, line_lookup))
+        out.append(format_table(team, t, line_lookup,
+                                streak=f"{streak_strip(t['games'])}   ← newest"))
         out.append("")
         out.append(f"> r5 {t['r5_u25']}/5 ({t['r5_u25']*20}%) · r15 {t['r15_u25']}/15 "
                    f"({t['r15_u25']/15*100:.0f}%) · {venue_lbl} {t['venue_u25']}/{t['venue_total']} "
@@ -350,7 +356,7 @@ def format_game(m, teams, line_lookup, injuries, context_map):
         h2h_str = "none in window"
     b2b_str = ", ".join(t.lower() for t in m["b2b_teams"]) if m["b2b_teams"] else "none"
 
-    out.append("### context")
+    out.append("context")
     out.append("")
     out.append(f"- h2h: {h2h_str}")
     out.append(f"- b2b: {b2b_str}")
@@ -401,7 +407,7 @@ def format_game(m, teams, line_lookup, injuries, context_map):
     elite_a = " (elite)" if m.get("aw_elite") else ""
     elite_h = " (elite)" if m.get("hm_elite") else ""
 
-    out.append("### goalies")
+    out.append("goalies")
     out.append("")
     out.append(f"- {away_l}: {m['aw_goalie']}{elite_a} — {m['aw_goalie_cls']} ({m['aw_goalie_share']:.0f}% starts, sv% {m['aw_sv_pct']:.4f}) · {ac}")
     out.append(f"- {home_l}: {m['hm_goalie']}{elite_h} — {m['hm_goalie_cls']} ({m['hm_goalie_share']:.0f}% starts, sv% {m['hm_sv_pct']:.4f}) · {hc}")
@@ -439,13 +445,13 @@ def format_recommendation(matchups, record):
 
     if len(picks) >= 2:
         parlay_legs = sorted(picks, key=pick_sort_key)[:2]
-        out.append("## tonight's parlay — 1p under 2.5, 2 legs")
+        out.append(section("tonight's parlay — 1p under 2.5, 2 legs"))
         out.append("")
         for i, p in enumerate(parlay_legs, 1):
             a, h = p["away"].lower(), p["home"].lower()
             fct = p["factors"]
             tags = game_tags(p)
-            out.append(f"### leg {i} — {a} @ {h} ({p['confidence']}/6)")
+            out.append(f"leg {i} — {a} @ {h} ({p['confidence']}/6)")
             out.append("")
             out.append(f"> {start_time_et(p['start_utc'])} · line {format_line(p['total_line'])} · "
                        f"{fct['goalie_pair']}{(' · ' + tags) if tags else ''}")
@@ -458,36 +464,39 @@ def format_recommendation(matchups, record):
         hms = extra + hms
 
     elif len(picks) == 1:
-        out.append("## no parlay tonight — only 1 game qualifies")
+        out.append(section("no parlay tonight — only 1 game qualifies"))
         out.append("")
         p = picks[0]
         a, h = p["away"].lower(), p["home"].lower()
         fct = p["factors"]
         out.append(f"single-leg watch: {a} @ {h} — {p['confidence']}/6")
+        out.append("")
         out.append(f"> {start_time_et(p['start_utc'])} · line {format_line(p['total_line'])} · "
                    f"{fct['goalie_pair']} · logged as hm (2-leg rule)")
         out.append("")
 
     else:
-        out.append("## no play tonight")
+        out.append(section("no play tonight"))
         out.append("")
 
     if hms:
-        out.append("### honorable mentions")
+        out.append(section("honorable mentions"))
         out.append("")
-        out.append("| matchup | conf | line | goalies | notes |")
-        out.append("|---|---|---|---|---|")
+        out.append("```")
+        out.append(f"{'matchup':<12} {'conf':<5} {'line':<5} {'goalies':<16} notes")
         for m in hms:
             f = m["factors"]
-            out.append(f"| {m['away'].lower()} @ {m['home'].lower()} | {m['confidence']}/6 "
-                       f"| {format_line(m['total_line'])} | {f['goalie_pair']} | {game_tags(m)} |")
+            g = f"{m['away'].lower()} @ {m['home'].lower()}"
+            out.append(f"{g:<12} {str(m['confidence']) + '/6':<5} "
+                       f"{format_line(m['total_line']):<5} {f['goalie_pair']:<16} {game_tags(m)}".rstrip())
+        out.append("```")
         out.append("")
 
     if avoids:
-        out.append("### avoid")
+        out.append(section("avoid"))
         out.append("")
-        out.append("| matchup | conf | line | reason |")
-        out.append("|---|---|---|---|")
+        out.append("```")
+        out.append(f"{'matchup':<12} {'conf':<5} {'line':<5} reason")
         for m in avoids:
             f = m["factors"]
             reasons = []
@@ -495,8 +504,10 @@ def format_recommendation(matchups, record):
             if f["line"] < 0: reasons.append(f"{format_line(m['total_line'])} line")
             if f["r5"] == 0: reasons.append(f"r5 {m['comb_r5_pct']:.0f}%")
             reason_str = ", ".join(reasons) if reasons else "low factors"
-            out.append(f"| {m['away'].lower()} @ {m['home'].lower()} | {m['confidence']}/6 "
-                       f"| {format_line(m['total_line'])} | {reason_str} |")
+            g = f"{m['away'].lower()} @ {m['home'].lower()}"
+            out.append(f"{g:<12} {str(m['confidence']) + '/6':<5} "
+                       f"{format_line(m['total_line']):<5} {reason_str}".rstrip())
+        out.append("```")
         out.append("")
 
     return out
@@ -545,13 +556,13 @@ def main():
         record = compute_season_record(all_entries_tmp)
 
         out = [
-            f"# nhl 1p u2.5 — {date_label}, {dt.year}",
+            f"nhl 1p u2.5 — {date_label}, {dt.year}",
             "",
             DIVIDER,
             "",
-            "## no play tonight — 0 games scheduled",
+            section("no play tonight — 0 games scheduled"),
             "",
-            "## season — v4",
+            section("season — v4"),
             "",
             f"parlays {record['parlay_w']}-{record['parlay_l']} "
             f"({pct(record['parlay_w'], record['parlay_l'])}%) · "
@@ -560,7 +571,7 @@ def main():
             "",
         ]
         if postmortem_text:
-            out.append("### post-mortem")
+            out.append(section("post-mortem"))
             out.append("")
             out.extend(postmortem_text.strip().split("\n"))
             out.append("")
@@ -599,7 +610,7 @@ def main():
     # ── masthead ──
     n_games = len(data["matchups"])
     model_v = data.get("model_version", "v4")
-    out.append(f"# nhl 1p u2.5 — {date_label}, {dt.year}")
+    out.append(f"nhl 1p u2.5 — {date_label}, {dt.year}")
     out.append("")
     out.append(DIVIDER)
     out.append("")
@@ -617,7 +628,7 @@ def main():
     out.extend(format_postmortem(all_entries, yesterday, postmortem_text))
 
     # ── season record ──
-    out.append("## season — v4")
+    out.append(section("season — v4"))
     out.append("")
     out.append(f"parlays {record['parlay_w']}-{record['parlay_l']} "
                f"({pct(record['parlay_w'], record['parlay_l'])}%) · "
@@ -630,7 +641,7 @@ def main():
 
     # ── ice critic review (only when there's a 2-leg parlay) ──
     if ice:
-        out.append("## ice review")
+        out.append(section("ice review"))
         out.append("")
         verdict = ice.get("verdict", "").strip()
         if verdict:
@@ -659,7 +670,7 @@ def main():
         out.append("")
 
     # ── per-game analysis ──
-    out.append("## game details")
+    out.append(section("game details"))
     out.append("")
     out.append("click any game to expand — sorted by confidence")
     out.append("")
