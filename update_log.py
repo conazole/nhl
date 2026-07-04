@@ -24,7 +24,7 @@ def entries_from_engine(data):
       - factors dict (r5/r15/goalie/line individual scores)
       - goalie_pair + per-team classification + predicted goalies + confirmed flags
       - is_playoff + series_info (round, game_num, seeds, series score)
-    old log entries simply lack these fields — consumers must use .get() with defaults."""
+    old log entries simply lack these fields · consumers must use .get() with defaults."""
     entries = []
     for m in data["matchups"]:
         away = m["away"].lower()
@@ -35,6 +35,12 @@ def entries_from_engine(data):
         entry = {
             "game": f"{away} @ {home}",
             "confidence": conf,
+            # judgment-loop telemetry: the pre-cap score + which fail-closed
+            # caps fired, so season_review can grade every cap decision
+            # against what the uncapped pick would have done.
+            "confidence_uncapped": m.get("confidence_uncapped", conf),
+            "caps": m.get("caps", []),
+            "short_window": m.get("short_window", False),
             "total_line": m.get("total_line"),
             "combined_recent5_pct": m.get("comb_r5_pct", 0),
             "combined_last15_pct": m.get("comb_r15_pct", 0),
@@ -42,7 +48,7 @@ def entries_from_engine(data):
 
             # factor breakdown: individual contributions so we can backtest
             # weights. keys vary by model version (v4.2: r5/r15/goalie/line,
-            # v4.3+: r5/day/goalie/line) — store whatever the engine scored.
+            # v4.3+: r5/day/goalie/line) · store whatever the engine scored.
             "factors": {k: factors.get(k)
                         for k in ("r5", "day", "r15", "goalie", "line")
                         if factors.get(k) is not None},
@@ -73,7 +79,7 @@ def entries_from_engine(data):
         entries.append(entry)
 
     # parlay is always 2-leg, top 2 by the shared deterministic sort key
-    # (confidence desc, r5% desc, r15% desc, game asc — record.pick_sort_key,
+    # (confidence desc, r5% desc, r15% desc, game asc · record.pick_sort_key,
     # the same ordering format_output displays and compute_season_record scores).
     # n==1: solo qualifier becomes HM (no parlay).
     # n>=3: only top 2 stay as picks (tier=null); the rest become HMs.
@@ -94,7 +100,7 @@ def load_entries(arg):
     if os.path.isfile(arg):
         with open(arg) as f:
             content = f.read().strip()
-        # engine output may have stderr before JSON — find the JSON
+        # engine output may have stderr before JSON · find the JSON
         for start_key in ['{"target_date"', '[{']:
             idx = content.find(start_key)
             if idx >= 0:
@@ -130,7 +136,7 @@ def main():
     # opening-line capture: the FIRST /nhl run of the day stores total_line as
     # the opening. subsequent runs preserve that original total_line and treat
     # the newly-fetched line as the closing line. lets clv accumulate just by
-    # running /nhl again near puck drop — no separate cron required.
+    # running /nhl again near puck drop · no separate cron required.
     prior_opening = {}
     for e in entries:
         if e.get("date") == target_date and "result" not in e:
@@ -141,17 +147,18 @@ def main():
                 prior_opening[e["game"]] = e["total_line"]
 
     # remove existing entries for target_date that DON'T have results
-    # (resolved entries are sacred — never touch them)
+    # (resolved entries are sacred · never touch them)
     kept = [e for e in entries if not (e["date"] == target_date and "result" not in e)]
     removed = len(entries) - len(kept)
 
     # fields we pass through transparently (present in engine-derived entries,
-    # absent in hand-crafted legacy entries — both cases work).
+    # absent in hand-crafted legacy entries · both cases work).
     PASSTHROUGH = (
         "tier", "reason", "factors", "goalie_pair",
         "aw_goalie", "hm_goalie", "aw_goalie_cls", "hm_goalie_cls",
         "aw_confirmed", "hm_confirmed", "is_playoff", "series_info",
         "model_version", "is_day_game",
+        "confidence_uncapped", "caps", "short_window",
     )
 
     from datetime import datetime, timezone
@@ -198,7 +205,7 @@ def main():
     # write back (atomic)
     write_log(kept)
 
-    # post-write health check — catches 2-leg violations / dangling dates
+    # post-write health check · catches 2-leg violations / dangling dates
     # immediately instead of months later (see audit, jun 12 2026)
     warnings = check_invariants(kept, before_date=target_date)
     for w in warnings:

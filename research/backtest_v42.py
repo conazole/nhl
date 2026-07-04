@@ -97,7 +97,7 @@ def main():
 
     # v4.2 patch impact simulation
     # assume without cap we'd have been tempted to pick on every playoff game with
-    # starter+starter + decent r5/r15 — i.e., the upper band of playoff games.
+    # starter+starter + decent r5/r15 · i.e., the upper band of playoff games.
     # the cap zeroes out all g1s from eligibility. effect on overall pick u2.5 rate:
     print("=== v4.2 g1 cap impact ===\n")
     pool_all = rows

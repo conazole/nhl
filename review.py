@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""nhl 1p u2.5 model review — find patterns the daily postmortem can't see.
+"""nhl 1p u2.5 model review · find patterns the daily postmortem can't see.
 
 reads picks_log.jsonl, analyzes all resolved v4 entries, prints colored
 output to terminal, and saves a clean markdown report to review_{date}.md.
@@ -15,6 +15,17 @@ from datetime import datetime, timedelta
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_PATH = os.path.join(SCRIPT_DIR, "picks_log.jsonl")
+
+# baselines from the parameter loop (model_params.json); fallbacks match the
+# last emitted params so the file is optional.
+try:
+    with open(os.path.join(SCRIPT_DIR, "model_params.json")) as _f:
+        _P = json.load(_f)
+except (OSError, json.JSONDecodeError):
+    _P = {}
+_B = _P.get("baselines", {})
+BASE_RATE = _B.get("base_rate", 73.0)
+PICK_TIER_EXPECT = _B.get("pick_tier", 81.0)
 
 # ── ansi colors (terminal only) ──
 GREEN = "\033[92m"
@@ -38,7 +49,7 @@ def load_resolved(model="v4", last_days=None):
             e = json.loads(line)
             if e.get("model") != model:
                 continue
-            # only win/loss count — "void" (postponed/rescheduled) is excluded
+            # only win/loss count · "void" (postponed/rescheduled) is excluded
             if e.get("result") not in ("win", "loss"):
                 continue
             if cutoff and e["date"] < cutoff:
@@ -96,7 +107,7 @@ def analyze(entries, last_days=None):
 
     dates = sorted(set(e["date"] for e in entries))
     scope = f"last {last_days} days" if last_days else "all time"
-    out(f"{BOLD}nhl 1p u2.5 — model review{RESET}")
+    out(f"{BOLD}nhl 1p u2.5 · model review{RESET}")
     out(f"{len(entries)} games · {len(dates)} days · {dates[0]} to {dates[-1]} · {scope}")
 
     # ── record summary ─────────────────────────────
@@ -154,14 +165,14 @@ def analyze(entries, last_days=None):
     conf4_t = conf4["w"] + conf4["l"]
     if conf4_t >= 5:
         conf4_r = 100 * conf4["w"] / conf4_t
-        # honest thresholds: ~75% = base rate (a pick tier at base rate adds
-        # nothing), 81% = v4.3 backtest expectation for conf-4
-        if conf4_r < 75:
-            out(f"\n  {RED}⚠ 4/6 tier at {conf4_r:.0f}% — at/below the ~75% base rate. the threshold tier is adding nothing.{RESET}")
-        elif conf4_r < 80:
-            out(f"\n  {YELLOW}⚠ 4/6 tier at {conf4_r:.0f}% — above base but under the 81% v4.3 backtest expectation.{RESET}")
+        # honest thresholds from model_params.json: a pick tier at base rate
+        # adds nothing; the backtest pick-tier rate is the expectation
+        if conf4_r < BASE_RATE:
+            out(f"\n  {RED}⚠ 4/6 tier at {conf4_r:.0f}% · at/below the {BASE_RATE:.0f}% base rate. the threshold tier is adding nothing.{RESET}")
+        elif conf4_r < PICK_TIER_EXPECT - 1:
+            out(f"\n  {YELLOW}⚠ 4/6 tier at {conf4_r:.0f}% · above base but under the {PICK_TIER_EXPECT:.0f}% backtest expectation.{RESET}")
         else:
-            out(f"\n  {GREEN}✓ 4/6 tier at {conf4_r:.0f}% — tracking the v4.3 backtest.{RESET}")
+            out(f"\n  {GREEN}✓ 4/6 tier at {conf4_r:.0f}% · tracking the backtest.{RESET}")
 
     # ── tier accuracy ──────────────────────────────
     section("tier accuracy")
@@ -176,9 +187,9 @@ def analyze(entries, last_days=None):
         pk_r = 100 * sum(1 for e in picks if e["result"] == "win") / len(picks)
         hm_r = 100 * sum(1 for e in hm if e["result"] == "win") / len(hm)
         if hm_r > pk_r:
-            out(f"\n  {YELLOW}⚠ HMs ({hm_r:.0f}%) outperforming picks ({pk_r:.0f}%) — threshold may be too strict{RESET}")
+            out(f"\n  {YELLOW}⚠ HMs ({hm_r:.0f}%) outperforming picks ({pk_r:.0f}%) · threshold may be too strict{RESET}")
         else:
-            out(f"\n  {GREEN}✓ picks ({pk_r:.0f}%) > HMs ({hm_r:.0f}%) — threshold calibrated well{RESET}")
+            out(f"\n  {GREEN}✓ picks ({pk_r:.0f}%) > HMs ({hm_r:.0f}%) · threshold calibrated well{RESET}")
 
     # ── line factor ────────────────────────────────
     section("line factor")
@@ -219,7 +230,7 @@ def analyze(entries, last_days=None):
     if l65_t:
         l65_r = 100 * l65["w"] / l65_t
         sym = GREEN + "✓" if l65_r < 75 else YELLOW + "⚠"
-        out(f"\n  {sym} 6.5 gate: {l65_r:.0f}% u2.5 — {'holding' if l65_r < 75 else 'may need revisit'}{RESET}")
+        out(f"\n  {sym} 6.5 gate: {l65_r:.0f}% u2.5 · {'holding' if l65_r < 75 else 'may need revisit'}{RESET}")
 
     # ── loss profile ───────────────────────────────
     section("loss profile")
@@ -247,7 +258,7 @@ def analyze(entries, last_days=None):
         barely_pct = 100 * barely / len(losses)
         out(f"\n  {barely} barely over (3 goals, {barely_pct:.0f}%) · {blowout} blowout (4+, {100-barely_pct:.0f}%)")
         if barely_pct < 50:
-            out(f"  {YELLOW}⚠ majority of losses are blowouts — model missing high-scoring signals{RESET}")
+            out(f"  {YELLOW}⚠ majority of losses are blowouts · model missing high-scoring signals{RESET}")
 
     # ── day of week ────────────────────────────────
     section("day of week")
@@ -314,7 +325,7 @@ def analyze(entries, last_days=None):
     section("factor hit rates (all v4 entries with factor breakdown)")
     entries_with_factors = [e for e in entries if e.get("factors") and e.get("actual_1p_total") is not None]
     if not entries_with_factors:
-        out("  no entries with factor breakdown yet — field added apr 18 2026")
+        out("  no entries with factor breakdown yet · field added apr 18 2026")
         out(f"  {DIM}once enough v4.2+ games land, this will show per-factor u2.5 rates.{RESET}")
     else:
         out(f"  sample: {len(entries_with_factors)} resolved games with factor data")
@@ -342,7 +353,7 @@ def analyze(entries, last_days=None):
     section("closing line value")
     with_clv = [e for e in entries if "line_delta" in e and e.get("actual_1p_total") is not None]
     if not with_clv:
-        out("  no closing-line captures yet — run close_line.py ~30 min before first puck drop")
+        out("  no closing-line captures yet · run close_line.py ~30 min before first puck drop")
         out(f"  {DIM}cron: 30 18 * * *  python3 close_line.py $(date +\\%Y-\\%m-\\%d){RESET}")
     else:
         n = len(with_clv)
@@ -352,9 +363,9 @@ def analyze(entries, last_days=None):
         out(f"  avg line_delta (close - open): {avg_delta:+.2f}")
         out(f"  clv (u2.5-aligned, higher = better): {clv_us:+.2f}")
         if clv_us > 0.10:
-            out(f"  {GREEN}✓ market is moving toward us — we're pricing earlier than sharps.{RESET}")
+            out(f"  {GREEN}✓ market is moving toward us · we're pricing earlier than sharps.{RESET}")
         elif clv_us < -0.10:
-            out(f"  {RED}⚠ market is moving against us — we're the late money, check thesis.{RESET}")
+            out(f"  {RED}⚠ market is moving against us · we're the late money, check thesis.{RESET}")
         else:
             out(f"  {DIM}flat. market converging with our priors.{RESET}")
 
@@ -365,23 +376,23 @@ def analyze(entries, last_days=None):
             out(f"  last 30 games rolling clv: {avg30:+.2f}")
 
     # ── base rate drift monitor ────────────────────
-    # 1p u2.5 league-wide base rate. v4 was validated at 73.0%. drift > 5pp
-    # means the scoring regime has shifted and our weights may need re-validation.
+    # 1p u2.5 league-wide base rate vs the model_params.json baseline. drift
+    # > 5pp means the scoring regime has shifted; re-run the research stack.
     section("base rate drift")
     # use every resolved entry (pick + hm + avoid all represent a played game)
     played = [e for e in entries if e.get("actual_1p_total") is not None]
     hits = sum(1 for e in played if e["actual_1p_total"] < 3)
     if played:
         rate = 100 * hits / len(played)
-        drift = rate - 73.0
-        out(f"  season u2.5 base rate: {rate:.1f}% ({hits}/{len(played)}) vs 73.0% v4 baseline")
+        drift = rate - BASE_RATE
+        out(f"  season u2.5 base rate: {rate:.1f}% ({hits}/{len(played)}) vs {BASE_RATE:.1f}% params baseline")
         out(f"  drift: {drift:+.1f}pp")
         if abs(drift) < 2.5:
-            out(f"  {GREEN}✓ regime stable — v4 weights still valid.{RESET}")
+            out(f"  {GREEN}✓ regime stable · v4 weights still valid.{RESET}")
         elif abs(drift) < 5.0:
-            out(f"  {YELLOW}⚠ minor drift — monitor but no action needed.{RESET}")
+            out(f"  {YELLOW}⚠ minor drift · monitor but no action needed.{RESET}")
         else:
-            out(f"  {RED}⚠ significant drift — run research/revalidate.py, weights may need update.{RESET}")
+            out(f"  {RED}⚠ significant drift · run research/revalidate.py, weights may need update.{RESET}")
 
         # rolling last 100 for recent-regime signal
         last100 = sorted(played, key=lambda e: e["date"], reverse=True)[:100]
@@ -421,15 +432,15 @@ def analyze(entries, last_days=None):
         av_w = sum(1 for e in avoids if e["result"] == "win")
         av_r = 100 * av_w / len(avoids)
         if av_r >= 75:
-            findings.append(f"{YELLOW}⚠{RESET} avoids hit at {av_r:.0f}% — looks conservative, but that's the base rate. the model's edge is in picks, not avoids.")
+            findings.append(f"{YELLOW}⚠{RESET} avoids hit at {av_r:.0f}% · looks conservative, but that's the base rate. the model's edge is in picks, not avoids.")
         else:
-            findings.append(f"{GREEN}✓{RESET} avoids at {av_r:.0f}% — correctly filtering weaker games.")
+            findings.append(f"{GREEN}✓{RESET} avoids at {av_r:.0f}% · correctly filtering weaker games.")
 
     # the kill list: factors we've removed and why
-    findings.append(f"{DIM}killed factors: poisson, elite bonus, b2b, penalties, system profile, context, early start — all noise on 1149 games{RESET}")
+    findings.append(f"{DIM}killed factors: poisson, elite bonus, b2b, penalties, system profile, context, early start · all noise on 1149 games{RESET}")
 
     # model evolution note
-    findings.append(f"{DIM}v4.1 (apr 6): backup+starter split from backup+tandem. 77.4% vs 62.0% — the starter anchors the game.{RESET}")
+    findings.append(f"{DIM}v4.1 (apr 6): backup+starter split from backup+tandem. 77.4% vs 62.0% · the starter anchors the game.{RESET}")
 
     for f in findings:
         out(f"  {f}")
@@ -439,10 +450,12 @@ def analyze(entries, last_days=None):
 
 
 def save_report(lines, last_days=None):
-    """save github-friendly markdown version to review_{date}.md.
+    """save github-friendly version to review_{date}.md.
 
-    simple approach: ## headers for sections, everything else in one big
-    code block per section (perfect alignment), insights as bullet points.
+    typography: plain title line, plain section labels with --- rules (no
+    markdown headings · they render bold), aligned content in code blocks,
+    insights as bullet points. the final text passes through format_output's
+    sanitizer so banned characters can never reach the file.
     """
     today = datetime.now().strftime("%Y-%m-%d")
     filename = f"review_{today}.md"
@@ -458,16 +471,18 @@ def save_report(lines, last_days=None):
 
         # title
         if i == 0:
-            md.append(f"# {stripped}")
+            md.append(stripped)
             md.append("")
             i += 1
             continue
 
-        # section divider → ## header
+        # section divider → plain label with a --- rule
         if stripped.startswith("═" * 10):
             if i + 2 < len(clean) and clean[i + 2].strip().startswith("═" * 10):
                 title = clean[i + 1].strip()
-                md.append(f"## {title}")
+                md.append("---")
+                md.append("")
+                md.append(title)
                 md.append("")
                 i += 3
 
@@ -512,8 +527,9 @@ def save_report(lines, last_days=None):
             md.append("")
         i += 1
 
+    from format_output import sanitize
     with open(filepath, "w") as f:
-        f.write("\n".join(md))
+        f.write(sanitize("\n".join(md)))
 
     return filepath
 

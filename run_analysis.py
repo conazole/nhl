@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""nhl 1p u2.5 analysis engine — reusable, all computation in one script.
+"""nhl 1p u2.5 analysis engine · reusable, all computation in one script.
 
 usage:
     python3 run_analysis.py 2026-03-12
@@ -15,7 +15,33 @@ from zoneinfo import ZoneInfo
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 ET_TZ = ZoneInfo("America/New_York")
-MODEL_VERSION = "v4.3"
+
+# ── parameter loop: every scoring constant + quoted rate lives in
+# model_params.json (emitted by research/emit_params.py, stamped with a
+# validated-through date). the literals below are FALLBACKS so the engine
+# still runs if the file is missing · they must match the last emitted params.
+_PARAMS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "model_params.json")
+try:
+    with open(_PARAMS_PATH) as _f:
+        PARAMS = json.load(_f)
+except (OSError, json.JSONDecodeError):
+    PARAMS = {}
+
+MODEL_VERSION = PARAMS.get("model_version", "v4.3.1")
+_FACTORS = PARAMS.get("factors", {})
+R5_HI = _FACTORS.get("r5", {}).get("hi", 80)
+R5_MID = _FACTORS.get("r5", {}).get("mid", 70)
+DAY_CUTOFF_ET = _FACTORS.get("day_cutoff_et", 17)
+GOALIE_PTS = _FACTORS.get("goalie_pts", {
+    "starter+starter": 2, "starter+tandem": 1, "backup+starter": 1,
+    "tandem+tandem": 0, "backup+tandem": -1, "backup+backup": -1})
+LINE_PLUS = _FACTORS.get("line", {}).get("plus", 5.5)
+LINE_ZERO = _FACTORS.get("line", {}).get("zero", 6.0)
+PICK_THRESHOLD = PARAMS.get("pick_threshold", 4)
+G1_CAP = PARAMS.get("g1_cap", 3)
+CAP_BELOW_PICK = PICK_THRESHOLD - 1     # every fail-closed cap pins here
+MIN_WINDOW_GAMES = PARAMS.get("min_window_games", 5)
 
 # ============================================================
 # constants
@@ -50,7 +76,7 @@ ALL_TEAMS = ["ANA", "BOS", "BUF", "CGY", "CAR", "CHI", "COL", "CBJ",
 ELITE_MIN_GS = 25   # minimum games started to qualify for elite
 ELITE_TOP_N = 10     # top N by save% = elite
 
-# set by main() — used by helpers to derive season-specific values
+# set by main() · used by helpers to derive season-specific values
 _TARGET_DATE = None
 
 
@@ -59,9 +85,12 @@ _TARGET_DATE = None
 # ============================================================
 
 def season_from_date(date_str):
-    """derive season start year from a date string. oct+ = this year, jan-sep = last year."""
+    """derive season start year from a date string. sep+ = this year, jan-aug
+    = last year. september counts as the NEW season because 2026-27 opens in
+    late september (84-game cba schedule) · game days never fall in september
+    of the OLD season (preseason is filtered by gameType)."""
     dt = datetime.strptime(date_str, "%Y-%m-%d")
-    return dt.year if dt.month >= 10 else dt.year - 1
+    return dt.year if dt.month >= 9 else dt.year - 1
 
 def season_id(date_str):
     """e.g., '2026-03-27' -> '20252026'"""
@@ -180,7 +209,7 @@ def fetch_one_team_stats(team):
 
 def fetch_standings(teams_needed):
     """fetch current standings, return playoff context per team.
-    informational only — not used in confidence scoring."""
+    informational only · not used in confidence scoring."""
     try:
         req = urllib.request.Request(STANDINGS_URL, headers=HDR)
         data = json.loads(urllib.request.urlopen(req, timeout=10).read())
@@ -197,10 +226,12 @@ def fetch_standings(teams_needed):
             continue
         ci = t.get("clinchIndicator", "")
         status = clinch_map.get(ci, "fighting")
+        # 84-game regular season from 2026-27 (new cba); 82 before that
+        season_games = 84 if season_from_date(_TARGET_DATE) >= 2026 else 82
         standings[abbrev] = {
             "pts": t.get("points", 0),
             "gp": t.get("gamesPlayed", 0),
-            "remaining": 82 - t.get("gamesPlayed", 0),
+            "remaining": max(0, season_games - t.get("gamesPlayed", 0)),
             "status": status,
             "wc_seq": t.get("wildcardSequence", 0),
         }
@@ -245,7 +276,7 @@ def fetch_season_goalie_stats(teams_tonight):
 
     progress(f"  elite goalies (top {ELITE_TOP_N} by sv%, ≥{ELITE_MIN_GS} gs):")
     for i, g in enumerate(elite_list):
-        progress(f"    {i+1}. {g['name']} ({g['team']}) — "
+        progress(f"    {i+1}. {g['name']} ({g['team']}) · "
                  f"sv%: {g['sv_pct']:.4f}, gs: {g['gs']}")
 
     return result, elite_set
@@ -265,12 +296,34 @@ def fetch_todays_games(target_date):
     except Exception:
         progress("  score endpoint failed, trying schedule...")
         data = api_get(SCHED_URL)
+        if "games" not in data and "gameWeek" in data:
+            # schedule/now nests games under gameWeek days · flatten to the
+            # score-endpoint shape (the old fallback silently yielded zero
+            # games because it read data["games"] directly)
+            flat = []
+            for day in data.get("gameWeek", []):
+                for g in day.get("games", []):
+                    g.setdefault("gameDate", day.get("date", ""))
+                    flat.append(g)
+            data = {"games": flat, "gameWeek": True}
+
+    # wrong-date guard: the score endpoint echoes the requested date. a
+    # served wrong-date slate must be fatal, never silent (see the nfl
+    # repo's espn season= bug · assume nothing about apis).
+    got_date = data.get("currentDate")
+    if got_date and got_date != target_date and "gameWeek" not in data:
+        raise RuntimeError(f"score api returned currentDate {got_date} for a "
+                           f"{target_date} request · refusing the slate")
 
     games = []
     for g in data.get("games", []):
         gdate = g.get("gameDate", "")[:10]
-        # schedule endpoint returns multiple days — filter to target
+        # schedule endpoint returns multiple days · filter to target
         if "gameDate" in g and gdate != target_date:
+            continue
+        # only regular season (2) + playoffs (3). preseason games (1) appear
+        # in this feed as FINAL and would otherwise be analyzed/bet.
+        if g.get("gameType", 2) not in (2, 3):
             continue
         aw = normalize_abbrev(g.get("awayTeam", {}).get("abbrev", ""))
         hm = normalize_abbrev(g.get("homeTeam", {}).get("abbrev", ""))
@@ -330,6 +383,11 @@ def walk_scores(target_date, teams_needed, games_tonight):
 
         for g in data.get("games", []):
             if g.get("gameState") not in ("OFF", "FINAL"):
+                continue
+            # regular season + playoffs only. without this filter the first
+            # 2-3 weeks of a season silently ingested PRESEASON games into
+            # r5/r15 windows, goalie starts, and the league base rate.
+            if g.get("gameType", 2) not in (2, 3):
                 continue
             aw = normalize_abbrev(g["awayTeam"]["abbrev"])
             hm = normalize_abbrev(g["homeTeam"]["abbrev"])
@@ -398,7 +456,7 @@ def walk_scores(target_date, teams_needed, games_tonight):
 
 def fetch_game_details(gid):
     """fetch boxscore + play-by-play for one game (with cache).
-    only fully-successful fetches are cached — a transient api failure must
+    only fully-successful fetches are cached · a transient api failure must
     not permanently poison the cache with '?' goalies / zeroed shots."""
     cached = cache_get("games", str(gid))
     if cached:
@@ -459,7 +517,7 @@ def fetch_game_details(gid):
     if box_ok and pbp_ok:
         cache_put("games", str(gid), result)
     else:
-        progress(f"  game {gid}: fetch incomplete (box={box_ok} pbp={pbp_ok}) — not cached")
+        progress(f"  game {gid}: fetch incomplete (box={box_ok} pbp={pbp_ok}) · not cached")
     return result
 
 
@@ -720,7 +778,7 @@ def compute_team_metrics(teams_needed, games_tonight, team_games,
 def combined_u25(a_games, b_games):
     """combined u2.5 hits over the UNION of two teams' recent games.
     games the two teams played against each other appear in both windows
-    with the same outcome — counting them twice (the pre-jun-2026 behavior)
+    with the same outcome · counting them twice (the pre-jun-2026 behavior)
     double-weights shared games and overstates the sample. deep in a playoff
     series most of the window is shared, so 8 distinct games were being
     dressed up as 10. returns (u25_hits, n_distinct, n_shared)."""
@@ -762,7 +820,7 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
         if not am or not hm:
             continue
 
-        # combined stats — de-duped union of both teams' windows (shared
+        # combined stats · de-duped union of both teams' windows (shared
         # games count once; see combined_u25 docstring)
         comb_r5, comb_r5_n, r5_shared = combined_u25(am["games"][:5], hm["games"][:5])
         comb_r5_pct = comb_r5 / comb_r5_n * 100 if comb_r5_n > 0 else 0
@@ -795,11 +853,11 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
         #   day game (0-1): start <5pm ET = +1 (83.2% u2.5, holds both halves)
         #   goalie (-1 to +2): starter+starter = 79.6% point-in-time
         #   line (-1 to +1): 5.5=+1, 6.0=0, 6.5+=-1 (77.3/75.6/70.1)
-        # r15 UNSCORED since v4.3 — +1.6pp full season, INVERTED on holdout;
+        # r15 UNSCORED since v4.3 · +1.6pp full season, INVERTED on holdout;
         # its near-free +1 (fired on 63% of games) promoted base-rate games
         # into the pick tier (the 208 picks it added hit 75.0% = base rate).
         # still computed/logged/displayed + used in the deterministic tiebreak.
-        # elite bonus KILLED — noise on 892 games (75.0%, +0.4pp).
+        # elite bonus KILLED · noise on 892 games (75.0%, +0.4pp).
 
         # day-game detection (v4.3 factor input): local start before 5pm ET
         is_day_game = False
@@ -809,7 +867,7 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
                 dt_utc = datetime.fromisoformat(start_utc.replace("Z", "+00:00"))
                 dt_et = dt_utc.astimezone(ET_TZ)
                 et_hour = round(dt_et.hour + dt_et.minute / 60, 2)
-                is_day_game = et_hour < 17
+                is_day_game = et_hour < DAY_CUTOFF_ET
             except Exception:
                 pass
 
@@ -872,73 +930,73 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
         aw_backup = aw_cls == "backup"
         hm_backup = hm_cls == "backup"
 
-        # factor 1: combined recent 5 (0-2)
-        # 892-game backtest: r5 80-89% = 77.4% (+2.8pp), best bucket.
-        # r5>=90% = 75.2% (worse — regression). dropped +3 tier.
-        if comb_r5_pct >= 80:    f_r5 = 2
-        elif comb_r5_pct >= 70:  f_r5 = 1
-        else:                    f_r5 = 0
+        # factor 1: combined recent 5 (0-2). cutoffs from model_params.json.
+        if comb_r5_pct >= R5_HI:     f_r5 = 2
+        elif comb_r5_pct >= R5_MID:  f_r5 = 1
+        else:                        f_r5 = 0
 
-        # factor 2 (v4.3): day game (0-1) — start before 5pm ET.
-        # 1393-game point-in-time validation: day games 83.2% u2.5 (119/143)
-        # vs 72.7% prime-time. holds train (matinee 81.6%, afternoon 81.7%)
-        # AND holdout (93.3%, 88.5% weekend-day). mechanism: routine
-        # disruption + the 1p feeling-out process = cautious, low-event
-        # opening frames. replaces r15 (failed holdout validation).
+        # factor 2 (v4.3): day game (0-1) · start before DAY_CUTOFF_ET.
+        # mechanism: routine disruption + the 1p feeling-out process =
+        # cautious, low-event opening frames. replaced r15 (failed holdout).
+        # rates live in model_params.json.
         f_day = 1 if is_day_game else 0
 
-        # factor 3: goalie matchup type (-1 to +2)
-        # v4.1: split backup by partner type (275-game audit, apr 2026).
-        # backup+starter = 77.4% (53g) ≈ starter+tandem — starter anchors the game.
-        # backup+tandem = 62.0% (50g), backup+backup = 56.0% (25g) — both ends leak.
+        # factor 3: goalie matchup type (-1 to +2). point map from
+        # model_params.json (v4.1 split backup by partner type · the starter
+        # anchors the game; rates live in the params file).
         pair = tuple(sorted([aw_cls, hm_cls]))
+        f_goalie_projected = GOALIE_PTS.get(f"{pair[0]}+{pair[1]}", -1)
+        f_goalie = f_goalie_projected  # always score · confirmed flag is informational only
 
-        if pair == ("starter", "starter"):
-            f_goalie_projected = 2    # 81.0% on 247 games
-        elif pair in (("starter", "tandem"), ("backup", "starter")):
-            f_goalie_projected = 1    # 76-77% — starter anchors both matchup types
-        elif pair == ("tandem", "tandem"):
-            f_goalie_projected = 0    # 71.6% on 74 games
-        elif pair == ("backup", "tandem"):
-            f_goalie_projected = -1   # 62.0% on 50 games
-        elif pair == ("backup", "backup"):
-            f_goalie_projected = -1   # 56.0% on 25 games
-        else:
-            f_goalie_projected = -1   # fallback
-        f_goalie = f_goalie_projected  # always score — confirmed flag is informational only
-
-        # factor 4: total line (-1 to +1) — v4, validated on 1149 games.
-        # 5.5 line = 78.7% u2.5 (282 games), 6.0 = 76.4% (496), 6.5 = 72.6% (365).
-        # line <= 6.0 is the gate; 6.5+ games are penalized.
+        # factor 4: total line (-1 to +1). cutoffs from model_params.json.
+        # line <= LINE_ZERO is the gate; higher totals are penalized.
         game_line_key = f"{away}@{home}"
         total_line = tonight_lines.get(game_line_key) if tonight_lines else None
         if total_line is not None:
-            if total_line <= 5.5:     f_line = 1
-            elif total_line <= 6.0:   f_line = 0
-            else:                     f_line = -1   # 6.5+
+            if total_line <= LINE_PLUS:     f_line = 1
+            elif total_line <= LINE_ZERO:   f_line = 0
+            else:                           f_line = -1
         else:
-            f_line = 0  # no line data = neutral
+            f_line = 0  # no line data = neutral (the cap below handles it)
 
         # v4.3 scale: /6. pick >= 4, HM = 2-3, avoid < 2.
         total_conf = max(0, f_r5 + f_day + f_goalie + f_line)
         total_conf_projected = max(0, f_r5 + f_day + f_goalie_projected + f_line)
+        conf_uncapped = total_conf   # pre-cap score, logged so season_review
+                                     # can grade every cap decision against
+                                     # what the uncapped pick would have done
+
+        # fail-closed caps · each one pins confidence below the pick line and
+        # is named in `caps` (telemetry for the judgment loop):
+        caps = []
 
         # v4.2 playoff game-1 cap (playoffs only, gameType=3, game 1 of series):
-        # 5-year audit shows g1 u2.5 rate is 72% pooled and 63.3% in last 2 seasons —
-        # BELOW the regular-season baseline. teams feel each other out, no rhythm,
-        # amped defenses. cap confidence at 3 (HM max) so g1s can never become picks.
-        # g2+ are unaffected (they trend up: g4+ = 81.0% last 2 seasons).
+        # g1s run below the regular-season baseline (teams feel each other
+        # out, no rhythm, amped defenses); g2+ recover. rates in params.
         if is_playoff and series_game_num == 1:
-            total_conf = min(total_conf, 3)
-            total_conf_projected = min(total_conf_projected, 3)
+            caps.append("g1_cap")
+            total_conf = min(total_conf, G1_CAP)
+            total_conf_projected = min(total_conf_projected, G1_CAP)
 
         # fail-closed line gate (jun 12 2026): a game with no sourced line can
         # never be a pick. a true-6.5 game with a missed line would otherwise
         # dodge its -1 and could sneak to 4/6. wrong line = wrong gate decision.
         line_missing = total_line is None
         if line_missing:
-            total_conf = min(total_conf, 3)
-            total_conf_projected = min(total_conf_projected, 3)
+            caps.append("line_missing")
+            total_conf = min(total_conf, CAP_BELOW_PICK)
+            total_conf_projected = min(total_conf_projected, CAP_BELOW_PICK)
+
+        # fail-closed early-season gate (jul 2026): every validation row that
+        # produced the pick-tier rates required BOTH teams to have 5 played
+        # games (r5 on 2 games = 2/2 = 100% = spurious +2). a short window
+        # means the model is outside its validated regime · cap below pick.
+        short_window = (len(am["games"]) < MIN_WINDOW_GAMES
+                        or len(hm["games"]) < MIN_WINDOW_GAMES)
+        if short_window:
+            caps.append("short_window")
+            total_conf = min(total_conf, CAP_BELOW_PICK)
+            total_conf_projected = min(total_conf_projected, CAP_BELOW_PICK)
 
         # informational factors (not in confidence, shown for context)
         sys_map = {"structured": 1, "moderate": 0, "volatile": -1}
@@ -966,6 +1024,9 @@ def compute_matchups(games_tonight, team_metrics, h2h_data,
             "hm_goalie_share": round(hm_share * 100, 0),
             "aw_goalie_cls": aw_cls, "hm_goalie_cls": hm_cls,
             "confidence": total_conf,
+            "confidence_uncapped": conf_uncapped,
+            "caps": caps,
+            "short_window": short_window,
             "is_playoff": is_playoff,
             "series_game_num": series_game_num,
             "series_info": series_info,

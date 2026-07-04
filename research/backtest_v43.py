@@ -11,7 +11,7 @@ variants:
 
 scored on all games where r5/r15/goalie features exist. line factor uses the
 logged-line subset; games without a line score f_line=0 in ALL variants (the
-production line-missing cap is operational, not statistical — excluded here).
+production line-missing cap is operational, not statistical · excluded here).
 
 outputs per variant: confidence gradient, pick tier (>=4) hit rate + volume,
 parlay-night simulation (top-2 by conf,r5).
@@ -21,7 +21,10 @@ import csv, os, math
 from collections import defaultdict
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-CSV_PATH = os.path.join(HERE, "season_dataset.csv")
+# the jun 2026 v4.2-vs-v4.3 decision artifact, kept reproducible. datasets are
+# per-season files since jul 2026. for multi-season comparisons use
+# backtest_variants.py.
+CSV_PATH = os.path.join(HERE, "season_dataset_2025.csv")
 SPLIT_DATE = "2026-02-15"
 
 
@@ -119,8 +122,8 @@ def evaluate(rows, variant):
         lo, hi = wilson(w, n)
         tw, tn = train_d.get(c, [0, 0])
         hw, hn = hold_d.get(c, [0, 0])
-        ts = f"{100*tw/tn:5.1f}% ({tn:>3})" if tn else "—"
-        hs = f"{100*hw/hn:5.1f}% ({hn:>3})" if hn else "—"
+        ts = f"{100*tw/tn:5.1f}% ({tn:>3})" if tn else "·"
+        hs = f"{100*hw/hn:5.1f}% ({hn:>3})" if hn else "·"
         print(f"{c:>4} {f'{w}/{n}':>14} {100*w/n:6.1f}% [{lo:4.1f},{hi:5.1f}] {ts:>14} {hs:>14}")
 
     for thresh in (4, 5):

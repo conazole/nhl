@@ -71,7 +71,7 @@ def get_officials(game_id):
 def get_starting_goalies(game_id):
     """fetch starting goalies for a completed game via the boxscore endpoint.
     returns {"away": "lastname", "home": "lastname"} or {} on failure.
-    name.default on this endpoint is formatted "J. Oettinger" — we split on
+    name.default on this endpoint is formatted "J. Oettinger" · we split on
     whitespace and take the last token to get just the surname."""
     try:
         data = api_get(BOXSCORE_URL.format(game_id), timeout=15)
@@ -136,7 +136,7 @@ def get_game_actuals(date_str):
 def resolve_date(entries, date_str):
     """resolve all unresolved entries for one date against actual scores.
     mutates entries in place. returns list of per-entry resolution summaries.
-    postponed/missing games are marked result="void" (never deleted — the log
+    postponed/missing games are marked result="void" (never deleted · the log
     is a real-money audit trail)."""
     actuals = get_game_actuals(date_str)
     resolved = []
@@ -162,7 +162,7 @@ def resolve_date(entries, date_str):
             if act.get("game_id"):
                 e["game_id"] = act["game_id"]
             # goalie-prediction-hit: compare predicted vs actual (last-name match).
-            # only set if we recorded a prediction — legacy entries skip this.
+            # only set if we recorded a prediction · legacy entries skip this.
             pred_a = (e.get("aw_goalie") or "").lower()
             pred_h = (e.get("hm_goalie") or "").lower()
             act_a = (act.get("actual_goalie_away") or "").lower()
@@ -170,7 +170,7 @@ def resolve_date(entries, date_str):
             if pred_a and pred_h and act_a and act_h:
                 e["goalie_prediction_hit"] = (pred_a == act_a and pred_h == act_h)
         else:
-            # game not found on this date — postponed/rescheduled/bad key.
+            # game not found on this date · postponed/rescheduled/bad key.
             # void it rather than delete: w/l counts skip voids, but the
             # entry (and why it produced no result) stays auditable.
             print(f"warning: {game} not found on {date_str}, marking void", file=sys.stderr)
@@ -198,7 +198,7 @@ def main():
     # load log
     entries = read_log()
 
-    # sweep ALL unresolved dates strictly before target — not just yesterday.
+    # sweep ALL unresolved dates strictly before target · not just yesterday.
     # gap days (no run the morning after) used to leave entries dangling
     # forever; the apr 9 2026 slate sat unresolved for 2 months and the
     # season record was missing a winning parlay because of it.
@@ -227,7 +227,7 @@ def main():
         try:
             resolved.extend(resolve_date(entries, d))
         except Exception as exc:
-            # a single bad date (api hiccup) must not block the others —
+            # a single bad date (api hiccup) must not block the others ·
             # it stays unresolved and the invariant check keeps flagging it.
             print(f"warning: failed to resolve {d}: {exc}", file=sys.stderr)
             failed_dates.append(d)
@@ -235,7 +235,7 @@ def main():
     # write updated log (atomic)
     write_log(entries)
 
-    # parlay result for yesterday specifically (the postmortem subject) —
+    # parlay result for yesterday specifically (the postmortem subject) ·
     # scored on the top-2 legs, the same selection format_output displayed.
     # use the full log entries so the sort key sees confidence + r5 + r15.
     picks_y = [e for e in entries

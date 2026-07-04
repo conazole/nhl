@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""factor lab — evaluate current + candidate 1p u2.5 factors on the
+"""factor lab · evaluate current + candidate 1p u2.5 factors on the
 point-in-time season dataset (research/season_dataset.csv).
 
 methodology:
   - chronological split: train < 2026-02-15, holdout >= 2026-02-15.
     a factor is credible only if its direction holds in BOTH halves.
-  - wilson 95% CIs on every bucket — a bucket whose CI straddles the
+  - wilson 95% CIs on every bucket · a bucket whose CI straddles the
     base rate is noise, not signal.
   - candidates additionally get stratified checks against combined r5
     (does the candidate separate WITHIN r5 strata, or is it just r5 in
@@ -19,7 +19,10 @@ import csv, os, math, sys
 from collections import defaultdict
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-CSV_PATH = os.path.join(HERE, "season_dataset.csv")
+# single-season lab (the jun 2026 v4.3 decision tool). datasets are per-season
+# files since jul 2026; point CSV_PATH at the season under study. for
+# multi-season work use drift_lab.py / backtest_variants.py.
+CSV_PATH = os.path.join(HERE, "season_dataset_2025.csv")
 SPLIT_DATE = "2026-02-15"
 
 
@@ -74,7 +77,7 @@ def bucket_table(rows, bucket_fn, title, order=None, min_n=15):
         parts = []
         for d in (at, ah, af):
             w, n = d.get(k, [0, 0])
-            parts.append(f"{100*w/n:5.1f}% ({n:>4})" if n else f"{'—':>12}")
+            parts.append(f"{100*w/n:5.1f}% ({n:>4})" if n else f"{'·':>12}")
         lo, hi = wilson(af[k][0], af[k][1])
         print(f"{str(k):<22} {parts[0]:>16} {parts[1]:>16} {parts[2]:>16}  [{lo:4.1f},{hi:5.1f}]")
 

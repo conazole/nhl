@@ -5,14 +5,14 @@ resolved picks to detect model drift.
 flags if any of these have decayed meaningfully from original v4 validation:
   - leg win rate  (baseline 80.5% legs on 1149 games)
   - 5+/6 hit rate (should hold near 92%)
-  - per-factor contribution (r5/r15/goalie/line — expect monotonic gradient)
+  - per-factor contribution (r5/r15/goalie/line · expect monotonic gradient)
   - confidence calibration (pick rate should beat avoid rate)
 
 usage:
     python3 research/revalidate.py              # uses most recent 100 resolved picks
     python3 research/revalidate.py --last 200   # wider window
 
-exits non-zero if any metric drifts >5pp from baseline — makes it cron-safe
+exits non-zero if any metric drifts >5pp from baseline · makes it cron-safe
 for a weekly health check that only alerts on real drift.
 """
 
@@ -23,17 +23,27 @@ from datetime import datetime
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_PATH = os.path.join(os.path.dirname(SCRIPT_DIR), "picks_log.jsonl")
 
-# baselines from the v4.3 point-in-time backtest (1393 games, jun 12 2026 —
-# research/backtest_v43.py). the previous numbers (80.5/92.0/61.8/77.3/73.0)
-# came from the in-sample mar-28 validation and included an unsourced 92%
-# that sat one bad week from a false drift alert.
+# baselines come from model_params.json (emitted by research/emit_params.py
+# from the multi-season point-in-time datasets). the literals are FALLBACKS
+# for a missing params file only · they were hand-anchored once (jun 12 2026)
+# and that hand-anchoring is exactly the failure mode the params file ends.
+_PARAMS_PATH = os.path.join(os.path.dirname(SCRIPT_DIR), "model_params.json")
+try:
+    with open(_PARAMS_PATH) as _f:
+        _P = json.load(_f)
+except (OSError, json.JSONDecodeError):
+    _P = {}
+_B = _P.get("baselines", {})
 BASELINE = {
-    "leg_rate": 83.0,     # pick tier (c>=4) u2.5 rate
-    "c5_rate": 88.1,      # tier >=5 (backtest n=42 — thin; expect noise)
-    "hm_rate": 74.5,      # conf 2-3
-    "avoid_rate": 70.2,   # conf 0-1
-    "base_rate": 74.9,    # league-wide 1p u2.5 (full season incl playoffs)
+    "leg_rate": _B.get("pick_tier", 83.0),   # pick tier (c>=4) u2.5 rate
+    "c5_rate": _B.get("tier5", 88.1),        # tier >=5 (thin n · expect noise)
+    "hm_rate": _B.get("hm", 74.5),           # conf 2-3
+    "avoid_rate": _B.get("avoid", 70.2),     # conf 0-1
+    "base_rate": _B.get("base_rate", 74.9),  # league-wide 1p u2.5
 }
+BASELINE_SOURCE = (f"model_params.json ({_P.get('generated', '?')}, validated "
+                   f"through {_P.get('validated_through', '?')})"
+                   if _B else "fallback literals (no model_params.json)")
 DRIFT_THRESHOLD = 5.0   # pp gap that triggers alert
 WARN_THRESHOLD = 2.5    # pp gap that triggers warning
 
@@ -47,7 +57,7 @@ def load_resolved(last_n=100):
             e = json.loads(line)
             if e.get("model") != "v4":
                 continue
-            # only win/loss count — "void" (postponed) is excluded
+            # only win/loss count · "void" (postponed) is excluded
             if e.get("result") not in ("win", "loss"):
                 continue
             entries.append(e)
@@ -90,7 +100,7 @@ def main():
 
     entries = load_resolved(last_n=args.last)
     if len(entries) < 30:
-        print(json.dumps({"error": f"only {len(entries)} resolved v4 entries — need >=30 for revalidation"}))
+        print(json.dumps({"error": f"only {len(entries)} resolved v4 entries · need >=30 for revalidation"}))
         sys.exit(2)
 
     scope = f"last {len(entries)} resolved v4 games ({entries[-1]['date']} → {entries[0]['date']})"
@@ -121,17 +131,17 @@ def main():
     gap = None if r is None else r - BASELINE["hm_rate"]
     results.append(("hm rate", BASELINE["hm_rate"], r, n, gap, status(gap)))
 
-    # avoid rate (hit rate — these "should go over" but many still go under, that's the base rate)
+    # avoid rate (hit rate · these "should go over" but many still go under, that's the base rate)
     r, n = rate(avoids, lambda e: True)
     gap = None if r is None else r - BASELINE["avoid_rate"]
     results.append(("avoid rate", BASELINE["avoid_rate"], r, n, gap, status(gap)))
 
-    # base rate (all games — is the regime shifting?)
+    # base rate (all games · is the regime shifting?)
     r, n = rate(entries, lambda e: True)
     gap = None if r is None else r - BASELINE["base_rate"]
     results.append(("base rate", BASELINE["base_rate"], r, n, gap, status(gap)))
     if r is not None and abs(gap) >= DRIFT_THRESHOLD:
-        alerts.append(f"base rate drifted {gap:+.1f}pp from {BASELINE['base_rate']}% baseline (now {r:.1f}%, n={n}) — scoring regime has shifted")
+        alerts.append(f"base rate drifted {gap:+.1f}pp from {BASELINE['base_rate']}% baseline (now {r:.1f}%, n={n}) · scoring regime has shifted")
 
     # per-factor analysis (only if factor breakdown available)
     entries_with_factors = [e for e in entries if e.get("factors")]
@@ -152,7 +162,8 @@ def main():
             }
 
     # text report
-    print(f"v4 revalidation — {scope}\n")
+    print(f"v4 revalidation · {scope}")
+    print(f"baselines: {BASELINE_SOURCE}\n")
     print(f"{'metric':<14} {'baseline':>10} {'actual':>10} {'n':>5} {'gap':>8}   status")
     print("─" * 62)
     for name, base, actual, n, gap, st in results:
@@ -178,7 +189,7 @@ def main():
         print("\nrecommended: re-audit model weights, consider backtest on wider sample.")
         sys.exit(1)
     else:
-        print("\n✓ no significant drift — v4.x weights remain valid.")
+        print("\n✓ no significant drift · v4.x weights remain valid.")
         sys.exit(0)
 
 

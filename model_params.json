@@ -1,0 +1,111 @@
+{
+  "model": "v4",
+  "model_version": "v4.3.1",
+  "pick_threshold": 4,
+  "hm_threshold": 2,
+  "g1_cap": 3,
+  "min_window_games": 5,
+  "factors": {
+    "r5": {
+      "hi": 80,
+      "mid": 70
+    },
+    "day_cutoff_et": 17,
+    "goalie_pts": {
+      "starter+starter": 2,
+      "starter+tandem": 1,
+      "backup+starter": 1,
+      "tandem+tandem": 0,
+      "backup+tandem": -1,
+      "backup+backup": -1
+    },
+    "line": {
+      "plus": 5.5,
+      "zero": 6.0
+    }
+  },
+  "watch": [
+    "day factor inverted in 2023-24 (71.2% vs 73.7% night) and 2024-25 (69.7% vs 75.3%) \u00b7 pooled +2.0pp \u00b7 re-audit after 2026-27",
+    "conf-6 pooled 74.1% (n=27) \u00b7 thin sample, monitor",
+    "g1 cap basis: pooled g1 69.3% vs g2+ 77.0% \u00b7 retire if live g1s keep tracking the pooled base rate",
+    "2026-27 league changes: 84-game season, late-september opener, 2 extra divisional games \u00b7 verify season boundaries + day-share"
+  ],
+  "generated": "2026-07-03",
+  "validated_through": "2026-06-11",
+  "seasons": [
+    2021,
+    2022,
+    2023,
+    2024,
+    2025
+  ],
+  "games_in_dataset": 6992,
+  "games_scored": 6151,
+  "baselines": {
+    "base_rate": 74.6,
+    "pick_tier": 78.2,
+    "pick_tier_n": 1243,
+    "pick_ci": [
+      75.8,
+      80.4
+    ],
+    "tier5": 81.5,
+    "tier5_n": 437,
+    "hm": 75.4,
+    "avoid": 71.9,
+    "day_rate": 76.4,
+    "night_rate": 74.4,
+    "line_rates": {
+      "<=5.5": {
+        "rate": 77.6,
+        "n": 2344
+      },
+      "6.0": {
+        "rate": 75.8,
+        "n": 1578
+      },
+      ">=6.5": {
+        "rate": 71.7,
+        "n": 3030
+      }
+    },
+    "goalie_pair_rates": {
+      "starter+starter": {
+        "rate": 75.8,
+        "n": 857
+      },
+      "starter+tandem": {
+        "rate": 74.3,
+        "n": 1108
+      },
+      "backup+starter": {
+        "rate": 74.9,
+        "n": 1556
+      },
+      "tandem+tandem": {
+        "rate": 75.4,
+        "n": 358
+      },
+      "backup+tandem": {
+        "rate": 73.4,
+        "n": 1041
+      },
+      "backup+backup": {
+        "rate": 72.7,
+        "n": 799
+      }
+    }
+  },
+  "parlay_sim": {
+    "wins": 194,
+    "losses": 123,
+    "rate": 0.612,
+    "nights_pct": 31.6
+  },
+  "playoff": {
+    "g1_rate": 69.3,
+    "g1_n": 75,
+    "g2plus_rate": 77.0,
+    "g2plus_n": 357
+  }
+}

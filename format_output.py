@@ -28,6 +28,36 @@ ET_TZ = ZoneInfo("America/New_York")
 
 # ── paths ──
 LOG_PATH = "/Users/raz/claude/nhl/picks_log.jsonl"
+PARAMS_PATH = "/Users/raz/claude/nhl/model_params.json"
+
+try:
+    with open(PARAMS_PATH) as _f:
+        PARAMS = json.load(_f)
+except (OSError, json.JSONDecodeError):
+    PARAMS = {}
+
+
+def sanitize(text):
+    """typography guard for every generated file: no em/en dashes (middot
+    instead), no bold markers, no markdown headings outside code fences.
+    the banned characters are spelled as unicode escapes on purpose · a
+    repo-wide character sweep can't neuter this function without changing
+    behavior."""
+    mid = "\u00b7"                             # middot
+    # banned characters are spelled as unicode escapes on purpose: a
+    # repo-wide literal-character sweep cannot neuter this sanitizer.
+    for ch in ("\u2014", "\u2013", "\u2015"):  # em dash, en dash, horizontal bar
+        text = text.replace(f" {ch} ", f" {mid} ").replace(ch, mid)
+    text = text.replace("\u002a\u002a", "")    # bold marker (**)
+    text = text.replace("\u005f\u005f", "")    # bold marker (__)
+    out, in_fence = [], False
+    for ln in text.split("\n"):
+        if ln.strip().startswith("```"):
+            in_fence = not in_fence
+        elif not in_fence and ln.lstrip().startswith("#"):
+            ln = ln.lstrip().lstrip("#").lstrip()
+        out.append(ln)
+    return "\n".join(out)
 
 # ── helpers ──
 
@@ -64,13 +94,13 @@ DIVIDER = "━" * 56
 
 
 def section(title):
-    """plain-text section label — no markdown heading syntax, no decoration.
+    """plain-text section label · no markdown heading syntax, no decoration.
     blank lines + content shape (code blocks, quotes) carry the structure."""
     return title
 
 
 def pair_abbrev(pair):
-    """'starter+starter' -> 's+s', 'backup+starter' -> 'b+s' (display only —
+    """'starter+starter' -> 's+s', 'backup+starter' -> 'b+s' (display only ·
     the log keeps full words)."""
     if not pair:
         return "-"
@@ -79,10 +109,10 @@ def pair_abbrev(pair):
 
 def goalie_line(team_l, goalie_ln, cls, team_data, sv_pct):
     """team header line with the goalie's own recent 1p record:
-    'uta — vejmelka (starter) · last-5 1p ga 1,0,2,1,0 · season sv% .912'.
+    'uta · vejmelka (starter) · last-5 1p ga 1,0,2,1,0 · season sv% .912'.
     last-5 = team 1p goals against in his 5 most recent starts in the
     15-game window (newest first)."""
-    parts = [f"{team_l} — {goalie_ln} ({cls})"]
+    parts = [f"{team_l} · {goalie_ln} ({cls})"]
     per_game = team_data.get("goalie_per_game") or []
     gas = [str(g["ga"]) for g, name in zip(team_data["games"], per_game)
            if name == goalie_ln][:5]
@@ -112,11 +142,40 @@ def game_tags(m):
         tags.append(po)
     if m.get("line_missing"):
         tags.append("no line")
+    if m.get("short_window"):
+        tags.append("short window")
     return " · ".join(tags)
 
 
+def miss_reason(m):
+    """one specific line on why a game misses the ticket (conf < 4): the
+    fail-closed cap that fired, or the factors that fell short."""
+    if m["confidence"] >= 4:
+        return ""
+    caps = m.get("caps") or []
+    cap_labels = {"g1_cap": "g1 cap · series openers run below base",
+                  "line_missing": "no sourced line · fail-closed",
+                  "short_window": "short sample window · fail-closed"}
+    fired = [cap_labels[c] for c in caps if c in cap_labels
+             and m.get("confidence_uncapped", m["confidence"]) >= 4]
+    if fired:
+        return f"capped from {m.get('confidence_uncapped')}/6: {fired[0]}"
+    f = m["factors"]
+    bits = []
+    if f.get("r5", 0) < 2:
+        bits.append(f"r5 {m['comb_r5_pct']:.0f}%")
+    if f.get("day", 1) == 0:
+        bits.append("night start")
+    if f.get("goalie", 2) < 2:
+        bits.append(pair_abbrev(f.get("goalie_pair")))
+    if f.get("line", 1) < 1:
+        bits.append(f"line {format_line(m['total_line'])}")
+    short = ", ".join(bits[:3]) if bits else "factors do not stack"
+    return f"{m['confidence']}/6 · {short}"
+
+
 def at_a_glance(matchups):
-    """one row per game, sorted by confidence — the whole slate in one look.
+    """one row per game, sorted by confidence · the whole slate in one look.
     monospace block, space-aligned (markdown table headers render bold)."""
     out = []
     out.append(section("tonight at a glance"))
@@ -142,7 +201,7 @@ def tier_label(conf):
 
 def playoff_caution(aw_po, hm_po, aw_label, hm_label):
     """return caution/note string based on playoff status pair. informational
-    only — not in scoring. highlights lineup/motivation risk for u2.5 bets."""
+    only · not in scoring. highlights lineup/motivation risk for u2.5 bets."""
     if not aw_po or not hm_po:
         return None
     a_status = aw_po.get("status", "fighting")
@@ -150,17 +209,17 @@ def playoff_caution(aw_po, hm_po, aw_label, hm_label):
     low_stakes = {"clinched", "eliminated"}
 
     if a_status == "fighting" and h_status == "fighting":
-        return "both fighting — max 1p defensive intensity, favors u2.5"
+        return "both fighting · max 1p defensive intensity, favors u2.5"
     if a_status in low_stakes and h_status in low_stakes:
-        return f"meaningless game ({a_status}+{h_status}) — starter rest risk, high variance"
+        return f"meaningless game ({a_status}+{h_status}) · starter rest risk, high variance"
     # mixed: one fighting, one locked in
     if a_status == "fighting":
         other, other_label = h_status, hm_label
     else:
         other, other_label = a_status, aw_label
     if other == "clinched":
-        return f"{other_label} clinched — possible starter rest, less urgency"
-    return f"{other_label} eliminated — may be loose/unmotivated, variance risk"
+        return f"{other_label} clinched · possible starter rest, less urgency"
+    return f"{other_label} eliminated · may be loose/unmotivated, variance risk"
 
 
 def playoff_tag(m, leading_sep=True):
@@ -198,7 +257,7 @@ def get_line_for_game(lookup, team_abbr, game):
     return lookup.get((game["date"], game_str))
 
 
-# ── season record (v4) — shared implementation in record.py ──
+# ── season record (v4) · shared implementation in record.py ──
 # (top-2 parlay scoring + void exclusion; local copy removed jun 12 2026)
 
 
@@ -215,13 +274,13 @@ def format_postmortem(entries, yesterday, postmortem_text):
     date_label = dt.strftime("%b %-d").lower()
 
     out = []
-    out.append(section(f"yesterday — {date_label}, {dt.year}"))
+    out.append(section(f"yesterday · {date_label}, {dt.year}"))
     out.append("")
 
     if not yest:
         out.append("no entries to resolve.")
         out.append("")
-        # still render postmortem text — covers dangling resolutions from
+        # still render postmortem text · covers dangling resolutions from
         # >1 day back (e.g. an empty "yesterday" between a game and this run)
         if postmortem_text:
             out.append(section("post-mortem"))
@@ -235,11 +294,11 @@ def format_postmortem(entries, yesterday, postmortem_text):
     if picks_y:
         for e in picks_y:
             icon = "✓" if e["result"] == "win" else "✗"
-            out.append(f'{icon} {e["game"]} — {e["result"]} '
+            out.append(f'{icon} {e["game"]} · {e["result"]} '
                        f'(1p {e["actual_1p_total"]}, {e["confidence"]}/6)')
         out.append("")
 
-    # parlay result — scored on the top-2 legs (what was actually bet)
+    # parlay result · scored on the top-2 legs (what was actually bet)
     if len(picks_y) >= 2:
         top2 = parlay_legs_for_date(picks_y)
         parlay_hit = all(e["result"] == "win" for e in top2)
@@ -251,12 +310,12 @@ def format_postmortem(entries, yesterday, postmortem_text):
         else:
             out.append(f"parlay: {icon} {word} ({', '.join(losers)} busted)")
     elif len(picks_y) == 0:
-        out.append("no parlay — no games hit ≥4/6")
+        out.append("no parlay · no games hit ≥4/6")
     else:
-        out.append("no parlay — only 1 leg")
+        out.append("no parlay · only 1 leg")
     out.append("")
 
-    # hm / avoid one-liners (informational — not money)
+    # hm / avoid one-liners (informational · not money)
     for label, sub in (("hm", hm_y), ("avoid", avoid_y)):
         if sub:
             bits = [f'{e["game"]} {"✓" if e["result"] == "win" else "✗"} '
@@ -279,7 +338,7 @@ def format_postmortem(entries, yesterday, postmortem_text):
 # ── 15-game markdown table ──
 
 def format_table(team_abbr, team_data, line_lookup, streak=None):
-    """15-game table as a fenced monospace block, space-aligned columns —
+    """15-game table as a fenced monospace block, space-aligned columns ·
     no markdown table syntax, so nothing renders bold. optional streak line
     sits at the top of the block."""
     rows = []
@@ -320,11 +379,11 @@ def format_game(m, teams, line_lookup, injuries, context_map):
     if m.get("is_playoff"):
         gn = m.get("series_game_num")
         if gn == 1:
-            playoff_detail_note = "playoff game 1 — confidence capped at 3/6 (g1 u2.5: 63.3% last 2 sns, below baseline)"
+            playoff_detail_note = "playoff game 1 · confidence capped at 3/6 (g1 u2.5: 63.3% last 2 sns, below baseline)"
         elif gn:
             playoff_detail_note = f"playoff game {gn}"
     if m.get("line_missing"):
-        cap_note = "no sourced line — capped at 3/6 (fail-closed line gate)"
+        cap_note = "no sourced line · capped at 3/6 (fail-closed line gate)"
         playoff_detail_note = f"{playoff_detail_note} · {cap_note}" if playoff_detail_note else cap_note
 
     # ── summary line (visible when collapsed) ──
@@ -348,13 +407,16 @@ def format_game(m, teams, line_lookup, injuries, context_map):
     r15_n = m.get("comb_r15_n", 30)
     r5_dedup = f", {m.get('r5_shared', 0)} shared" if m.get("r5_shared") else ""
     r15_dedup = f", {m.get('r15_shared', 0)} shared" if m.get("r15_shared") else ""
-    out.append(f"> {conf}/6 — {factor_str(f)}")
+    out.append(f"> {conf}/6 · {factor_str(f)}")
     out.append(f"> r5 {m['comb_r5']}/{r5_n} ({m['comb_r5_pct']}%{r5_dedup}) · "
                f"r15 {m['comb_r15']}/{r15_n} ({m['comb_r15_pct']}%{r15_dedup}, unscored) · "
                f"line {line_val} · {start_time_et(m['start_utc'])}"
                f"{' · day game' if m.get('is_day_game') else ''}")
     if playoff_detail_note:
         out.append(f"> {playoff_detail_note}")
+    why = miss_reason(m)
+    if why:
+        out.append(f"> misses the ticket: {why}")
     out.append("")
 
     # ── teams ──
@@ -396,7 +458,7 @@ def format_game(m, teams, line_lookup, injuries, context_map):
         top, bot = si.get("top_seed"), si.get("bottom_seed")
         top_w, bot_w = si.get("top_wins", 0), si.get("bottom_wins", 0)
         if top and bot and (top_w or bot_w):
-            series_str = f"{rd_label}, game {gn} — {top.lower()} {top_w}-{bot_w} {bot.lower()}"
+            series_str = f"{rd_label}, game {gn} · {top.lower()} {top_w}-{bot_w} {bot.lower()}"
         else:
             series_str = f"{rd_label}, game {gn} (series tied 0-0)"
         out.append(f"- series: {series_str}")
@@ -435,8 +497,8 @@ def format_game(m, teams, line_lookup, injuries, context_map):
 
     out.append("goalies")
     out.append("")
-    out.append(f"- {away_l}: {m['aw_goalie']}{elite_a} — {m['aw_goalie_cls']} ({m['aw_goalie_share']:.0f}% starts, sv% {m['aw_sv_pct']:.4f}) · {ac}")
-    out.append(f"- {home_l}: {m['hm_goalie']}{elite_h} — {m['hm_goalie_cls']} ({m['hm_goalie_share']:.0f}% starts, sv% {m['hm_sv_pct']:.4f}) · {hc}")
+    out.append(f"- {away_l}: {m['aw_goalie']}{elite_a} · {m['aw_goalie_cls']} ({m['aw_goalie_share']:.0f}% starts, sv% {m['aw_sv_pct']:.4f}) · {ac}")
+    out.append(f"- {home_l}: {m['hm_goalie']}{elite_h} · {m['hm_goalie_cls']} ({m['hm_goalie_share']:.0f}% starts, sv% {m['hm_sv_pct']:.4f}) · {hc}")
     out.append("")
 
     out.append("</details>")
@@ -446,7 +508,7 @@ def format_game(m, teams, line_lookup, injuries, context_map):
 
 # ── final recommendation ──
 
-# v4.1 goalie-pair points — used to price a late backup swap (display only)
+# v4.1 goalie-pair points · used to price a late backup swap (display only)
 GOALIE_PTS = {("starter", "starter"): 2, ("starter", "tandem"): 1,
               ("backup", "starter"): 1, ("tandem", "tandem"): 0,
               ("backup", "tandem"): -1, ("backup", "backup"): -1}
@@ -483,7 +545,7 @@ def leg_fragility(p):
             bits.append("holds through line movement")
 
     if p.get("is_playoff"):
-        bits.append("late goalie swap not priced (playoff override) — re-check dfo")
+        bits.append("late goalie swap not priced (playoff override) · re-check dfo")
     else:
         fg = f.get("goalie")
         clses = (p.get("aw_goalie_cls"), p.get("hm_goalie_cls"))
@@ -525,13 +587,13 @@ def format_recommendation(matchups, record, all_entries):
 
     if len(picks) >= 2:
         parlay_legs = sorted(picks, key=pick_sort_key)[:2]
-        out.append(section("tonight's parlay — 1p under 2.5, 2 legs"))
+        out.append(section("tonight's parlay · 1p under 2.5, 2 legs"))
         out.append("")
         for i, p in enumerate(parlay_legs, 1):
             a, h = p["away"].lower(), p["home"].lower()
             fct = p["factors"]
             tags = game_tags(p)
-            out.append(f"leg {i} — {a} @ {h} ({p['confidence']}/6)")
+            out.append(f"leg {i} · {a} @ {h} ({p['confidence']}/6)")
             out.append("")
             out.append(f"> {start_time_et(p['start_utc'])} · line {format_line(p['total_line'])} · "
                        f"{pair_abbrev(fct['goalie_pair'])}{(' · ' + tags) if tags else ''}")
@@ -553,12 +615,12 @@ def format_recommendation(matchups, record, all_entries):
         hms = extra + hms
 
     elif len(picks) == 1:
-        out.append(section("no parlay tonight — only 1 game qualifies"))
+        out.append(section("no parlay tonight · only 1 game qualifies"))
         out.append("")
         p = picks[0]
         a, h = p["away"].lower(), p["home"].lower()
         fct = p["factors"]
-        out.append(f"single-leg watch: {a} @ {h} — {p['confidence']}/6")
+        out.append(f"single-leg watch: {a} @ {h} · {p['confidence']}/6")
         out.append("")
         out.append(f"> {start_time_et(p['start_utc'])} · line {format_line(p['total_line'])} · "
                    f"{pair_abbrev(fct['goalie_pair'])} · logged as hm (2-leg rule)")
@@ -572,12 +634,13 @@ def format_recommendation(matchups, record, all_entries):
         out.append(section("honorable mentions"))
         out.append("")
         out.append("```")
-        out.append(f"{'matchup':<12} {'conf':<5} {'line':<5} {'pair':<5} notes")
+        out.append(f"{'matchup':<12} {'conf':<5} {'line':<5} {'pair':<5} why it misses")
         for m in hms:
             f = m["factors"]
             g = f"{m['away'].lower()} @ {m['home'].lower()}"
+            why = miss_reason(m) or game_tags(m)
             out.append(f"{g:<12} {str(m['confidence']) + '/6':<5} "
-                       f"{format_line(m['total_line']):<5} {pair_abbrev(f['goalie_pair']):<5} {game_tags(m)}".rstrip())
+                       f"{format_line(m['total_line']):<5} {pair_abbrev(f['goalie_pair']):<5} {why}".rstrip())
         out.append("```")
         out.append("")
 
@@ -609,6 +672,10 @@ def main():
     parser.add_argument("target_date", help="YYYY-MM-DD")
     parser.add_argument("engine_json", help="path to engine output JSON")
     parser.add_argument("--extras", default="{}", help="JSON with postmortem, injuries, context")
+    parser.add_argument("--out", default=None,
+                        help="write the analysis to this path instead of the live "
+                             "archive (mock/replay mode: no analysis_{date}.md, no "
+                             "previous-day deletion)")
     args = parser.parse_args()
 
     target_date = args.target_date
@@ -616,7 +683,7 @@ def main():
 
     with open(args.engine_json, "r") as f:
         content = f.read().strip()
-    # engine output may have stderr lines before JSON — find the JSON start
+    # engine output may have stderr lines before JSON · find the JSON start
     idx = content.find('{"target_date"')
     if idx > 0:
         content = content[idx:]
@@ -628,7 +695,7 @@ def main():
     context_map = extras.get("context", {})
     ice = extras.get("ice") or None
 
-    # zero-games guard — engine returns {"error": "no games found"} on off-days
+    # zero-games guard · engine returns {"error": "no games found"} on off-days
     if data.get("error") == "no games found":
         dt = datetime.strptime(target_date, "%Y-%m-%d")
         date_label = dt.strftime("%B %-d").lower()
@@ -645,13 +712,13 @@ def main():
         record = compute_season_record(all_entries_tmp)
 
         out = [
-            f"nhl 1p u2.5 — {date_label}, {dt.year}",
+            f"nhl 1p u2.5 · {date_label}, {dt.year}",
             "",
             DIVIDER,
             "",
-            section("no play tonight — 0 games scheduled"),
+            section("no play tonight · 0 games scheduled"),
             "",
-            section("season — v4"),
+            section("season · v4"),
             "",
             f"parlays {record['parlay_w']}-{record['parlay_l']} "
             f"({pct(record['parlay_w'], record['parlay_l'])}%) · "
@@ -664,12 +731,17 @@ def main():
             out.append("")
             out.extend(postmortem_text.strip().split("\n"))
             out.append("")
-        full_output = "\n".join(out)
+        full_output = sanitize("\n".join(out))
         print(full_output)
+        import os
+        if args.out:
+            with open(args.out, "w") as f:
+                f.write(full_output)
+            print(f"[saved to {args.out} · mock mode, live archive untouched]", file=sys.stderr)
+            return
         analysis_path = f"/Users/raz/claude/nhl/analysis_{target_date}.md"
         prev_date = (dt - timedelta(days=1)).strftime("%Y-%m-%d")
         prev_path = f"/Users/raz/claude/nhl/analysis_{prev_date}.md"
-        import os
         if os.path.exists(prev_path):
             os.remove(prev_path)
             print(f"[deleted {prev_path}]", file=sys.stderr)
@@ -699,7 +771,7 @@ def main():
     # ── masthead ──
     n_games = len(data["matchups"])
     model_v = data.get("model_version", "v4")
-    out.append(f"nhl 1p u2.5 — {date_label}, {dt.year}")
+    out.append(f"nhl 1p u2.5 · {date_label}, {dt.year}")
     out.append("")
     out.append(DIVIDER)
     out.append("")
@@ -717,7 +789,7 @@ def main():
     out.extend(format_postmortem(all_entries, yesterday, postmortem_text))
 
     # ── season record ──
-    out.append(section("season — v4"))
+    out.append(section("season · v4"))
     out.append("")
     out.append(f"parlays {record['parlay_w']}-{record['parlay_l']} "
                f"({pct(record['parlay_w'], record['parlay_l'])}%) · "
@@ -743,7 +815,7 @@ def main():
             note = leg.get("note") or leg.get("notes") or ""
             if not (game or call or note):
                 continue
-            out.append(f"- {game} — {call}{(' · ' + note) if note else ''}")
+            out.append(f"- {game} · {call}{(' · ' + note) if note else ''}")
         if per_leg:
             out.append("")
         concerns = ice.get("concerns", "").strip()
@@ -761,7 +833,7 @@ def main():
     # ── per-game analysis ──
     out.append(section("game details"))
     out.append("")
-    out.append("click any game to expand — sorted by confidence")
+    out.append("click any game to expand · sorted by confidence")
     out.append("")
     for m in data["matchups"]:
         out.extend(format_game(m, data["teams"], line_lookup, injuries, context_map))
@@ -769,18 +841,27 @@ def main():
     # ── footer ──
     out.append(DIVIDER)
     out.append("")
-    out.append(f"{model_v} · r5 + day + goalie + line · /6 scale · pick ≥4 · hm 2-3 · avoid <2")
+    vt = PARAMS.get("validated_through")
+    vt_str = f" · validated through {vt}" if vt else ""
+    out.append(f"{model_v} · r5 + day + goalie + line · /6 scale · pick ≥4 · hm 2-3 · avoid <2{vt_str}")
     out.append("")
 
-    full_output = "\n".join(out)
+    full_output = sanitize("\n".join(out))
     print(full_output)
+
+    import os
+    if args.out:
+        # mock/replay mode: custom path, never touches the live archive
+        with open(args.out, "w") as f:
+            f.write(full_output)
+        print(f"[saved to {args.out} · mock mode, live archive untouched]", file=sys.stderr)
+        return
 
     # save analysis file + delete previous day's
     analysis_path = f"/Users/raz/claude/nhl/analysis_{target_date}.md"
     prev_date = (dt - timedelta(days=1)).strftime("%Y-%m-%d")
     prev_path = f"/Users/raz/claude/nhl/analysis_{prev_date}.md"
 
-    import os
     if os.path.exists(prev_path):
         os.remove(prev_path)
         print(f"[deleted {prev_path}]", file=sys.stderr)

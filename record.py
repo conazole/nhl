@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""shared picks_log helpers — single source of truth for record math.
+"""shared picks_log helpers · single source of truth for record math.
 
 used by resolve_results.py, format_output.py, update_log.py, close_line.py.
 keeping read/write/record/parlay logic in one module ends the drift risk of
 the duplicated compute_season_record copies (audit, jun 12 2026).
 
 parlay scoring rule: a date's parlay = the top 2 picks by the deterministic
-sort key (confidence desc, r5% desc, r15% desc, game asc) — the same key
+sort key (confidence desc, r5% desc, r15% desc, game asc) · the same key
 format_output.py uses to display the parlay and update_log.py uses to demote
 3rd+ qualifiers. legacy dates that still carry 3+ untiered picks (pre apr-27
 demotion fix) are thereby scored on what was actually bet, not on every
@@ -50,7 +50,7 @@ def write_log(entries, path=LOG_PATH):
 
 
 def _r5_of(e):
-    """combined r5 % — accepts log-entry or engine-matchup field names."""
+    """combined r5 % · accepts log-entry or engine-matchup field names."""
     v = e.get("combined_recent5_pct")
     if v is None:
         v = e.get("comb_r5_pct", 0)
@@ -153,7 +153,7 @@ def check_invariants(entries, before_date=None, model="v4"):
     for d, picks in sorted(by_date_picks.items()):
         if len(picks) > 2:
             games = ", ".join(p.get("game", "?") for p in picks)
-            warnings.append(f"{d}: {len(picks)} untiered picks ({games}) — "
+            warnings.append(f"{d}: {len(picks)} untiered picks ({games}) · "
                             f"2-leg rule violated, demote extras to honorable_mention")
 
     if before_date:

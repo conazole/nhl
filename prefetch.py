@@ -30,6 +30,8 @@ HDR = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
 # team name → abbreviation mapping
 TEAM_ABBREVS = {
     "anaheim ducks": "ANA", "arizona coyotes": "UTA", "utah hockey club": "UTA",
+    "utah mammoth": "UTA",  # renamed may 2025 · the old name silently missed
+                            # dfo/pinnacle matches all of 2025-26 (jul 2026 audit)
     "boston bruins": "BOS", "buffalo sabres": "BUF", "calgary flames": "CGY",
     "carolina hurricanes": "CAR", "chicago blackhawks": "CHI",
     "colorado avalanche": "COL", "columbus blue jackets": "CBJ",
@@ -55,6 +57,7 @@ TEAM_ABBREVS = {
     "flyers": "PHI", "penguins": "PIT", "sharks": "SJS", "kraken": "SEA",
     "blues": "STL", "lightning": "TBL", "maple leafs": "TOR",
     "canucks": "VAN", "golden knights": "VGK", "capitals": "WSH", "jets": "WPG",
+    "mammoth": "UTA",
 }
 
 ESPN_ABBREV_MAP = {
@@ -100,6 +103,16 @@ def normalize_abbrev(abbrev):
     return ESPN_ABBREV_MAP.get(s, s)
 
 
+def lineup_projections_url(target_date):
+    """nhl.com lineup-projections url for the season the date belongs to.
+    was hardcoded to the 2025-26 slug · would have 404'd all of next season
+    and silently killed goalie source 2 + the injuries fetch (jul 2026 audit)."""
+    y, m = int(target_date[:4]), int(target_date[5:7])
+    start = y if m >= 9 else y - 1   # 2026-27 opens in late september
+    return (f"https://www.nhl.com/news/nhl-lineup-projections-"
+            f"{start}-{str(start + 1)[2:]}-season")
+
+
 def team_name_to_abbrev(name):
     """convert team name to abbreviation."""
     n = name.strip().lower()
@@ -130,7 +143,7 @@ def strip_html(html_str):
 
 
 # ============================================================
-# goalie fetching — dailyfaceoff
+# goalie fetching · dailyfaceoff
 # ============================================================
 
 def fetch_dfo_goalies():
@@ -162,6 +175,13 @@ def fetch_dfo_goalies():
                 gaa = g.get(f"{side}GoalieGoalsAgainstAvg", "")
 
                 abbrev = team_name_to_abbrev(team_name)
+                if team_name and not abbrev:
+                    # an unmapped team name means a rename/relocation the map
+                    # hasn't heard about (utah mammoth, may 2025). loud, never
+                    # silent · this cost a season of uta goalie confirmations.
+                    progress(f"  dfo: UNMAPPED TEAM NAME {team_name!r} · "
+                             f"update TEAM_ABBREVS in prefetch.py")
+                    goalies.setdefault("_unmapped", []).append(team_name)
                 if not abbrev or not goalie_name:
                     continue
 
@@ -186,16 +206,13 @@ def fetch_dfo_goalies():
         return {"_error": str(e)}
 
 
-def fetch_nhl_goalies():
+def fetch_nhl_goalies(target_date):
     """fetch projected goalies from nhl.com lineup projections page.
     returns {TEAM: {"name": "lastname", "source": "nhl.com"}}
     """
     progress("  fetching nhl.com lineup projections...")
     try:
-        html = fetch_url(
-            "https://www.nhl.com/news/nhl-lineup-projections-2025-26-season",
-            timeout=20
-        )
+        html = fetch_url(lineup_projections_url(target_date), timeout=20)
         text = strip_html(html)
         goalies = {}
 
@@ -277,7 +294,7 @@ def fetch_nhl_goalies():
 
 
 # ============================================================
-# line fetching — ESPN API + HTML fallback
+# line fetching · ESPN API + HTML fallback
 # ============================================================
 
 def fetch_espn_lines(target_date):
@@ -353,7 +370,7 @@ def fetch_espn_lines(target_date):
 
 
 # ============================================================
-# line fetching — Pinnacle (sharpest book, public JSON API)
+# line fetching · Pinnacle (sharpest book, public JSON API)
 # ============================================================
 
 PINNACLE_NHL_LEAGUE_ID = 1456  # NHL league ID in Pinnacle's system
@@ -369,14 +386,14 @@ PINNACLE_TEAM_MAP = {
     "New York Rangers": "NYR", "Ottawa Senators": "OTT", "Philadelphia Flyers": "PHI",
     "Pittsburgh Penguins": "PIT", "San Jose Sharks": "SJS", "Seattle Kraken": "SEA",
     "St. Louis Blues": "STL", "Tampa Bay Lightning": "TBL", "Toronto Maple Leafs": "TOR",
-    "Utah Hockey Club": "UTA", "Vancouver Canucks": "VAN",
+    "Utah Hockey Club": "UTA", "Utah Mammoth": "UTA", "Vancouver Canucks": "VAN",
     "Vegas Golden Knights": "VGK", "Washington Capitals": "WSH", "Winnipeg Jets": "WPG",
 }
 
 
 def fetch_pinnacle_lines(target_date):
     """fetch game totals from Pinnacle's public API.
-    Pinnacle is the sharpest book — their lines are the market benchmark.
+    Pinnacle is the sharpest book · their lines are the market benchmark.
     returns {"AWAY@HOME": 6.0, ...}
     """
     progress("  fetching pinnacle lines...")
@@ -402,6 +419,9 @@ def fetch_pinnacle_lines(target_date):
                 pname = p.get("name", "")
                 abbrev = PINNACLE_TEAM_MAP.get(pname)
                 if not abbrev:
+                    if pname and p.get("alignment") in ("home", "away"):
+                        progress(f"  pinnacle: UNMAPPED TEAM NAME {pname!r} · "
+                                 f"update PINNACLE_TEAM_MAP in prefetch.py")
                     continue
                 if p.get("alignment") == "home":
                     home = abbrev
@@ -441,10 +461,10 @@ def fetch_pinnacle_lines(target_date):
 
 
 # ============================================================
-# injury check — nhl.com status report
+# injury check · nhl.com status report
 # ============================================================
 
-def fetch_injuries(teams):
+def fetch_injuries(teams, target_date):
     """quick injury check for specific teams.
     returns {TEAM: "player (status), ..."}
     """
@@ -452,10 +472,7 @@ def fetch_injuries(teams):
     injuries = {}
 
     try:
-        html = fetch_url(
-            "https://www.nhl.com/news/nhl-lineup-projections-2025-26-season",
-            timeout=15
-        )
+        html = fetch_url(lineup_projections_url(target_date), timeout=15)
         text = strip_html(html)
 
         for team in teams:
@@ -540,7 +557,7 @@ def merge_goalie_sources(dfo, nhl):
 
 def reconcile_lines(espn_lines, pinnacle_lines):
     """reconcile lines from ESPN API + Pinnacle API.
-    Pinnacle is the sharpest book in the market — when ESPN and Pinnacle
+    Pinnacle is the sharpest book in the market · when ESPN and Pinnacle
     disagree, Pinnacle is almost always correct. ESPN is known to round
     6.0 → 5.5 or 6.5.
 
@@ -557,7 +574,7 @@ def reconcile_lines(espn_lines, pinnacle_lines):
             if p == e:
                 final[key] = p  # sources agree
             else:
-                # sources disagree — trust Pinnacle (sharper line)
+                # sources disagree · trust Pinnacle (sharper line)
                 final[key] = p
         elif p is not None:
             final[key] = p  # Pinnacle only
@@ -574,7 +591,7 @@ def reconcile_lines(espn_lines, pinnacle_lines):
 def main():
     parser = argparse.ArgumentParser(description="prefetch goalies + lines")
     parser.add_argument("target_date", help="YYYY-MM-DD")
-    parser.add_argument("--games", default="", help='JSON: [["AWAY","HOME"], ...] — if empty, auto-detect from NHL API')
+    parser.add_argument("--games", default="", help='JSON: [["AWAY","HOME"], ...] · if empty, auto-detect from NHL API')
     args = parser.parse_args()
 
     target_date = args.target_date
@@ -618,7 +635,7 @@ def main():
     # scraping page chrome into bogus line entries (ESPN HTML returns
     # junk like NTON@LERS, TTLE@STON 100.0 when no real matchups exist).
     if not games:
-        progress("no games tonight — skipping goalie/line fetches")
+        progress("no games tonight · skipping goalie/line fetches")
         result = {
             "target_date": target_date,
             "games": [],
@@ -638,10 +655,10 @@ def main():
     progress("fetching all sources in parallel...")
     with ThreadPoolExecutor(max_workers=6) as ex:
         fut_dfo = ex.submit(fetch_dfo_goalies)
-        fut_nhl = ex.submit(fetch_nhl_goalies)
+        fut_nhl = ex.submit(fetch_nhl_goalies, target_date)
         fut_espn = ex.submit(fetch_espn_lines, target_date)
         fut_pinnacle = ex.submit(fetch_pinnacle_lines, target_date)
-        fut_inj = ex.submit(fetch_injuries, teams_needed)
+        fut_inj = ex.submit(fetch_injuries, teams_needed, target_date)
 
         dfo_goalies = fut_dfo.result()
         nhl_goalies = fut_nhl.result()
@@ -650,6 +667,10 @@ def main():
         injuries = fut_inj.result()
 
     # collect errors from failed sources
+    unmapped = dfo_goalies.pop("_unmapped", None) if isinstance(dfo_goalies, dict) else None
+    if unmapped:
+        errors.append(f"dfo: unmapped team name(s) {sorted(set(unmapped))} · "
+                      f"update TEAM_ABBREVS in prefetch.py")
     if "_error" in dfo_goalies:
         errors.append(f"dfo: {dfo_goalies['_error']}")
         dfo_goalies = {}
@@ -673,23 +694,34 @@ def main():
     # flag lines that need manual verification
     # ESPN is known to round 6.0 → 5.5 or 6.5. since 6.0 is the most common
     # line (43% of games) and 6.5 triggers a -1 penalty in the model, any game
-    # ESPN shows as 6.5 COULD actually be 6.0 — which changes the pick decision.
+    # ESPN shows as 6.5 COULD actually be 6.0 · which changes the pick decision.
     # the agent MUST verify these with an additional source before running the engine.
-    # flag disagreements between sources (informational — Pinnacle wins)
+    # flag disagreements between sources (informational · Pinnacle wins)
+    def line_factor_bucket(v):
+        """the engine's f_line bucket: +1 (≤5.5), 0 (6.0), -1 (≥6.5)."""
+        return 1 if v <= 5.5 else (0 if v <= 6.0 else -1)
+
     lines_needing_verification = []
     for key, val in merged_lines.items():
         espn_val = espn_lines.get(key)
         pin_val = pinnacle_lines.get(key)
         if espn_val is not None and pin_val is not None and espn_val != pin_val:
+            straddle = line_factor_bucket(espn_val) != line_factor_bucket(pin_val)
+            reason = f"ESPN={espn_val} vs Pinnacle={pin_val} · using Pinnacle"
+            if straddle:
+                # the books disagree about which side of a scoring gate the
+                # total sits on · a half-point here flips f_line and can flip
+                # the pick decision. knife-edge: verify before betting.
+                reason = f"GATE STRADDLE: {reason} · f_line flips between sources, verify before betting"
             lines_needing_verification.append({
                 "game": key, "espn": espn_val, "pinnacle": pin_val,
-                "using": val, "reason": f"ESPN={espn_val} vs Pinnacle={pin_val} — using Pinnacle"
+                "using": val, "gate_straddle": straddle, "reason": reason
             })
         elif espn_val is not None and pin_val is None:
-            # only ESPN available — flag for awareness
+            # only ESPN available · flag for awareness
             lines_needing_verification.append({
                 "game": key, "espn": espn_val,
-                "using": val, "reason": "ESPN only — no Pinnacle confirmation"
+                "using": val, "reason": "ESPN only · no Pinnacle confirmation"
             })
 
     output = {

@@ -5,7 +5,7 @@ context (full audit jun 12 2026, see README changelog):
   - update_log.py only gained the "demote 3rd+ qualifiers to honorable_mention"
     rule on apr 27 (commit 68002a5). six earlier dates wrote 3-6 untiered picks.
   - compute_season_record scored those days as "all logged picks must win", so
-    apr 26 (bet: col@lak + tbl@mtl, both won — commit 64681cc) counted as a
+    apr 26 (bet: col@lak + tbl@mtl, both won · commit 64681cc) counted as a
     parlay LOSS because never-bet buf@bos lost.
   - the apr 9 re-run (commit d2a0fee) wiped min@dal's honorable_mention tier
     from the original run (commit a2d1f5e: "phi@det + wpg@stl parlay (both
@@ -15,10 +15,10 @@ what this does:
   1. demote never-bet extra qualifiers to honorable_mention on the six dates,
      keeping exactly the 2 legs per date that the run commits document as bet.
   2. tag each demoted entry with a "migration" marker for auditability.
-  3. verify against the commit-documented bets EXACTLY — abort without
+  3. verify against the commit-documented bets EXACTLY · abort without
      writing if the log doesn't match expectations.
 
-resolution of the dangling dates is NOT done here — run
+resolution of the dangling dates is NOT done here · run
 `python3 resolve_results.py 2026-06-12` afterwards (sweep-resolve).
 
 idempotent: re-running after success is a no-op.
@@ -56,11 +56,11 @@ def main():
         day_games = {e["game"] for e in day_picks}
 
         if day_games == legs:
-            print(f"{date}: already clean (exactly the 2 bet legs) — skipping")
+            print(f"{date}: already clean (exactly the 2 bet legs) · skipping")
             continue
         if not legs.issubset(day_games):
             print(f"ABORT: {date} untiered picks {sorted(day_games)} do not "
-                  f"contain documented bet legs {sorted(legs)} — log does not "
+                  f"contain documented bet legs {sorted(legs)} · log does not "
                   f"match expectations, nothing written", file=sys.stderr)
             sys.exit(1)
 
@@ -71,7 +71,7 @@ def main():
                 demoted.append(f"{date} {e['game']} (conf {e.get('confidence')})")
 
     if not demoted:
-        print("nothing to migrate — log already clean")
+        print("nothing to migrate · log already clean")
         return
 
     write_log(entries)
@@ -88,7 +88,7 @@ def main():
     leftover = [w for w in check_invariants(entries, before_date="2026-06-12")
                 if "untiered" in w]
     if leftover:
-        print("\nWARNING — still-violated 2-leg invariants:", file=sys.stderr)
+        print("\nWARNING · still-violated 2-leg invariants:", file=sys.stderr)
         for w in leftover:
             print(f"  - {w}", file=sys.stderr)
     else:

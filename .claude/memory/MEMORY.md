@@ -33,4 +33,5 @@ all rules live in CLAUDE.md (single source of truth). memory files below capture
 - [v4 model details — line factor, backtest, validation data](project_v4_model.md)
 - [v4.1: backup+starter → +1, split from backup+tandem (77.4%)](project_v41_backup_split.md)
 - [v4.3: r15 → day-game factor (<5pm et), point-in-time revalidation, corrected 18-5/41-5 record, next-season re-checks](project_v43_model.md)
+- [v4.3.1: adaptivity release — model_params.json, 5-season pooled 78.2% pick tier, day factor + goalie ladder on watch, annual ritual, espn live-odds trap](project_v431_adaptivity.md)
 - [playoff model research backlog — h2h tiebreak, series-state factor (do not implement without go-ahead)](project_playoff_model_research.md)

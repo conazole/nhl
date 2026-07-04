@@ -30,7 +30,7 @@ intended cron (ET, first puck drop usually 7pm → fire 6:30pm):
 import json, sys, argparse
 from datetime import datetime, timezone
 
-# reuse prefetch's line fetchers — single source of truth for scraping logic
+# reuse prefetch's line fetchers · single source of truth for scraping logic
 sys.path.insert(0, "/Users/raz/claude/nhl")
 from prefetch import fetch_espn_lines, fetch_pinnacle_lines, reconcile_lines  # noqa: E402
 from record import read_log, write_log  # noqa: E402
@@ -69,7 +69,7 @@ def main():
         print(json.dumps({"target_date": args.target_date, "updated": 0, "reason": "no eligible entries"}))
         return
 
-    # fetch current lines (sharp source first — prefer pinnacle consensus per CLAUDE.md rules)
+    # fetch current lines (sharp source first · prefer pinnacle consensus per CLAUDE.md rules)
     print(f"fetching closing lines for {len(targets)} entries...", file=sys.stderr)
     espn = fetch_espn_lines(args.target_date)
     pin = fetch_pinnacle_lines(args.target_date)
