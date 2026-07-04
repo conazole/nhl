@@ -189,6 +189,12 @@ def main():
             state["last_weekly"] = args.target_date
             write_state(state)
 
+    # persist the summary so format_output can render the health block
+    # deterministically (no reliance on the agent copying it by hand)
+    if w_due or a_due:
+        state["last_run"] = summary
+        write_state(state)
+
     print(json.dumps(summary))
 
 

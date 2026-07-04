@@ -59,6 +59,45 @@ def sanitize(text):
         out.append(ln)
     return "\n".join(out)
 
+MAINT_STATE_PATH = "/Users/raz/claude/nhl/maintenance_state.json"
+
+
+def health_lines(target_date):
+    """render the maintenance gate's summary for THIS date, if it ran.
+    deterministic · reads maintenance_state.json's last_run, so the health
+    block reaches the analysis file even if the agent forgets to mention it."""
+    try:
+        with open(MAINT_STATE_PATH) as f:
+            last = json.load(f).get("last_run") or {}
+    except (OSError, json.JSONDecodeError):
+        return []
+    if last.get("target_date") != target_date:
+        return []
+    out = []
+    wk = last.get("weekly") or {}
+    an = last.get("annual") or {}
+    if wk.get("ran"):
+        rev = (wk.get("results") or {}).get("revalidate") or {}
+        alerts = rev.get("drift_alerts") or []
+        if alerts:
+            out.append("health: weekly sweep ran · revalidate flags drift · read before betting")
+            for a in alerts:
+                out.append(f"- {a}")
+        else:
+            out.append(f"health: weekly sweep ran · {rev.get('note', 'stable')}")
+    if an.get("ran"):
+        if an.get("complete"):
+            out.append(f"health: annual ritual ran for {an.get('season')}-"
+                       f"{str((an.get('season') or 0) + 1)[2:]} · complete · "
+                       f"read {an.get('output', 'the ritual output')} + the params watch list before the first bet")
+        else:
+            out.append("health: ANNUAL RITUAL INCOMPLETE · do not bet until it passes "
+                       "(it refires on the next run)")
+    if out:
+        out.append("")
+    return out
+
+
 # ── helpers ──
 
 def pct(w, l):
@@ -718,6 +757,7 @@ def main():
             "",
             section("no play tonight · 0 games scheduled"),
             "",
+            *health_lines(target_date),
             section("season · v4"),
             "",
             f"parlays {record['parlay_w']}-{record['parlay_l']} "
@@ -778,6 +818,7 @@ def main():
     out.append(f"{n_games} game{'s' if n_games != 1 else ''} tonight · model {model_v} · "
                f"league base rate {data['base_rate']:.1f}% ({data['league_total']} sampled)")
     out.append("")
+    out.extend(health_lines(target_date))
 
     # ── tonight: at a glance, then the bet ──
     out.extend(at_a_glance(data["matchups"]))
