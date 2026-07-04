@@ -8,7 +8,7 @@ a game day, start to finish · the plain-english walkthrough
 
 this is what actually happens when /nhl runs, in order. every number quoted below defers to model_params.json (regenerated from the backtest, stamped with a validated-through date) · if this file and the params file disagree, the params file wins.
 
-1. settle yesterday. resolve_results.py sweeps every unresolved past date against real 1p scores from the nhl api, voids postponed games, recomputes the season record (parlays scored on the top-2 legs actually bet), and runs log-health checks. in parallel, prefetch.py pulls tonight's starting goalies (dailyfaceoff + nhl.com) and total lines (espn + pinnacle), flagging source disagreements · including gate straddles, where a half-point between books would flip the model's line factor and possibly the pick.
+1. settle yesterday. resolve_results.py sweeps every unresolved past date against real 1p scores from the nhl api, voids postponed games, recomputes the season record (parlays scored on the top-2 legs actually bet), and runs log-health checks. in parallel, prefetch.py pulls tonight's starting goalies (dailyfaceoff + nhl.com) and total lines (espn + pinnacle), flagging source disagreements · including gate straddles, where a half-point between books would flip the model's line factor and possibly the pick. also in parallel, maintenance.py checks its state file: 7+ days since the last weekly health sweep fires the review trio right now, and the first run of a new season fires the full annual ritual · the checkups ride the runs, so forgetting them is impossible. any drift alert it raises appears as a health line in the analysis.
 2. the postmortem. claude writes what we got right / what we got wrong for yesterday, and stamps a structured bust-reason tag (tag_results.py, fixed taxonomy: backup_surprise, pp_goals, track_meet, soft_goals, late_1p_flurry, late_news, plain_variance, other) onto every loss · so bust patterns accumulate in the log instead of evaporating as prose.
 3. the engine. run_analysis.py walks each team's last 15 games (regular season + playoffs only · preseason is filtered), computes combined recent-form over the union of both teams' windows, classifies tonight's goalies by starts share, and scores each game 0-6: recent form (0-2), day game (0-1), goalie matchup (-1 to +2), total line (-1 to +1). fail-closed caps pin a game below the pick line when the model shouldn't trust itself: no sourced line, either team with fewer than 5 played games (early season), or playoff game 1. every cap is named in the log with the uncapped score, so cap decisions get graded later.
 4. the ticket. games scoring 4+ are picks; the top 2 (by confidence, then recent form, then a fixed tiebreak) become the 2-leg parlay. one qualifier = no parlay tonight. zero = no play tonight. extra qualifiers demote to honorable mentions · never a third leg. games at 2-3 are honorable mentions, below 2 are avoids, and every non-pick carries a one-line reason it missed.
@@ -42,8 +42,8 @@ daily runs use a 5-script pipeline (~5 min):
 
 ```
 resolve_results.py ─┐
-                    ├─→ run_analysis.py ─→ format_output.py ─→ update_log.py
-prefetch.py ────────┘
+prefetch.py ────────┼─→ run_analysis.py ─→ format_output.py ─→ update_log.py
+maintenance.py ─────┘
          (+ tag_results.py for yesterday's losses, step 2)
 ```
 
@@ -63,7 +63,7 @@ step  script              what it does
 
 shared record math (season record, top-2 parlay scoring, deterministic pick ordering, log invariants) lives in record.py · imported by resolve_results, update_log, format_output, and close_line so the numbers can never drift apart.
 
-weekly, in season:
+weekly, in season (auto-fenced · maintenance.py fires this trio inside the first /nhl run 7+ days after the last sweep):
 
 ```
 python3 review.py --last 14          # patterns, factor hit rates, clv, drift
@@ -71,7 +71,7 @@ python3 research/revalidate.py       # recent-100 vs params baselines, alerts >5
 python3 season_review.py             # judgment loop: tiers, caps, busts, goalies
 ```
 
-annual ritual, before the first bet of each season:
+annual ritual, before the first bet of each season (auto-fenced · maintenance.py fires it on the first run of a new season and refuses to stamp it complete if any step fails):
 
 ```
 python3 research/build_dataset.py --season {just_finished}
@@ -103,6 +103,9 @@ format_output.py    minimalist analysis file · typography sanitizer, per-game
 update_log.py       picks_log.jsonl upsert · 2-leg demotion, cap telemetry,
                     transparent clv capture
 tag_results.py      structured bust-reason tags (fixed taxonomy)
+maintenance.py      self-fencing gate · auto-runs the weekly trio (7-day
+                    counter) + the annual ritual (new-season counter) inside
+                    /nhl runs · state in maintenance_state.json
 season_review.py    judgment-loop calibration vs params baselines
 replay_season.py    live-path replay of past seasons + backtest reconciliation
 review.py           weekly pattern analysis
@@ -129,6 +132,8 @@ data + docs
 ```
 model_params.json        machine-generated · every quoted number, stamped
                          validated-through · never hand-edited
+maintenance_state.json   machine-written · last weekly sweep + last annual
+                         ritual season · never hand-edited
 picks_log.jsonl          full pick history · factors, caps, results, clv
 analysis_{date}.md       daily analysis file (previous day's deleted each run)
 research/mock_*.md       mock analysis files from replay/mock runs
@@ -153,6 +158,7 @@ stack: nhl api (api-web.nhle.com, free) · moneypuck (xg + historical starters) 
 
 changelog
 
+- jul 3 2026 (v4.3.1 addendum) · self-fencing maintenance gate. new maintenance.py runs in step 1 of every /nhl run: a 7-day counter fires the weekly health trio (review.py, revalidate.py, season_review.py) and a season counter fires the full annual ritual on the first run of a new season, saving output to research/annual_ritual_{season}.txt. state lives in maintenance_state.json (machine-written). drift alerts surface as a health line in the analysis; an incomplete annual ritual blocks betting until it passes. no cron · the checkups ride the runs, so they cannot be forgotten.
 - jul 3 2026 (v4.3.1) · the adaptivity release. no scoring change; every constant and claim now regenerates from evidence.
   - three loops closed. parameter loop: model_params.json emitted by research/emit_params.py from a new 5-season 6,992-game point-in-time backtest · engine/formatter/review/revalidate/season_review read it with fallbacks; the analysis footer shows validated-through. data loop: build_dataset.py parameterized by season (was frozen to 2025-26 four ways), moneypuck auto-download, espn stored pregame totals as the historical line source, --validate mode (2025 rebuild: zero score mismatches). judgment loop: named fail-closed caps logged with uncapped scores, tag_results.py bust taxonomy, season_review.py calibration report.
   - honest re-baselining. the pick tier is 78.2% [75.8, 80.4] pooled over five seasons (not the one-season 83.0%); tier >=5 81.5%; parlay sim 61.2% at 32% of slates. day-game factor inverted in 2023-24/2024-25 and the goalie ladder is nearly flat pooled · both on the params watch list, kept only because no variant without them wins (backtest_variants.py).

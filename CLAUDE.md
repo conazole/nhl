@@ -119,7 +119,7 @@ workflow rules
 - use the prefetch pipeline (prefetch.py + resolve_results.py + format_output.py + update_log.py).
 - review.py: weekly pattern analysis · manual, not part of the daily pipeline. season_review.py: judgment-loop calibration · run weekly-ish and at season end.
 - no shortcuts · every model factor must use the correct data scope, not whatever's convenient.
-- never hand-edit model_params.json (regenerate via research/emit_params.py) or picks_log.jsonl (pipeline scripts only; one-off migrations live in research/ with verification + audit trail · see research/migrate_2026_06_12_parlay_integrity.py for the pattern).
+- never hand-edit model_params.json (regenerate via research/emit_params.py), maintenance_state.json (written by maintenance.py), or picks_log.jsonl (pipeline scripts only; one-off migrations live in research/ with verification + audit trail · see research/migrate_2026_06_12_parlay_integrity.py for the pattern).
 
 ---
 
@@ -138,15 +138,17 @@ execution pipeline (5 steps)
 
 CRITICAL: use pipeline scripts. never manual WebFetch for goalies/lines.
 
-step 1 · resolve yesterday + prefetch today (PARALLEL)
+step 1 · resolve yesterday + prefetch today + maintenance gate (PARALLEL)
 
 ```
 cd /Users/raz/claude/nhl && python3 resolve_results.py {TARGET_DATE}
 cd /Users/raz/claude/nhl && python3 prefetch.py {TARGET_DATE}
+cd /Users/raz/claude/nhl && python3 maintenance.py {TARGET_DATE}
 ```
 
 resolve_results.py: resolves ALL unresolved dates < TARGET_DATE (sweep · gap days can never dangle), voids postponed games, updates picks_log.jsonl, computes the v4 record (top-2 parlay scoring), and emits invariant_warnings · investigate any warning immediately.
 prefetch.py: fetches goalies (dfo + nhl.com) and lines (espn + pinnacle) in parallel, flags discrepancies + gate straddles + unmapped team names. outputs goalies_engine + lines dicts.
+maintenance.py: the self-fencing gate · auto-runs the weekly health trio when 7+ days have passed since the last sweep, and the full annual ritual on the first run of a new season (state in maintenance_state.json · machine-written, never hand-edit). read its json summary: any revalidate drift alert or incomplete-ritual note MUST be surfaced in the analysis (one health line in the postmortem section) and an incomplete annual ritual means do not bet until it passes. forgetting the reviews is no longer possible · they ride the runs.
 
 step 2 · review + postmortem + bust tags
 
@@ -189,7 +191,9 @@ clv is transparent. run /nhl as many times as you want in a day · the pipeline 
 
 ---
 
-weekly · in-season health
+weekly · in-season health (auto-fenced)
+
+maintenance.py runs this trio automatically inside the first /nhl run that lands 7+ days after the previous sweep · manual runs anytime:
 
 ```
 cd /Users/raz/claude/nhl && python3 review.py --last 14
@@ -197,11 +201,13 @@ cd /Users/raz/claude/nhl && python3 research/revalidate.py
 cd /Users/raz/claude/nhl && python3 season_review.py --since {season_start}
 ```
 
-review.py: per-factor hit rates, clv trend, base-rate drift vs params, weekly trend. revalidate.py: recent-100 vs params baselines, alerts on >5pp drift. season_review.py: tier calibration vs params, cap grading, bust taxonomy, goalie layer.
+review.py: per-factor hit rates, clv trend, base-rate drift vs params, weekly trend. revalidate.py: recent-100 vs params baselines, alerts on >5pp drift. season_review.py: tier calibration vs params, cap grading, bust taxonomy, goalie layer. force with python3 maintenance.py {date} --force-weekly.
 
 ---
 
-annual ritual · run before the first bet of each season
+annual ritual · run before the first bet of each season (auto-fenced)
+
+maintenance.py fires the full ritual automatically on the first /nhl run of a new season (september boundary), saves the research output to research/annual_ritual_{season}.txt, and refuses to stamp the state if any step fails · an incomplete ritual means do not bet until it passes. manual equivalent:
 
 ```
 cd /Users/raz/claude/nhl && python3 research/build_dataset.py --season {just_finished}
