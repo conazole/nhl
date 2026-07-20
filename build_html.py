@@ -981,10 +981,10 @@ details.game[open] {
    (user 2026-07-20: "some are crooked") · widest real title ("chi #32 @
    sea #31") fits inside 150px */
 .g-title { font:16px var(--disp); letter-spacing:.01em; white-space:nowrap;
-  flex:0 0 150px; display:flex; align-items:baseline; }
-.g-away { flex:0 0 64px; white-space:nowrap; }
-.g-at { flex:0 0 22px; text-align:center; }
-.g-home { white-space:nowrap; }
+  flex:0 0 140px; display:flex; align-items:baseline; }
+.g-away { flex:0 0 59px; white-space:nowrap; }
+.g-at { flex:0 0 16px; text-align:center; }
+.g-home { white-space:nowrap; margin-left:5px; }
 .rk { font:11px var(--mono); color:var(--accent); white-space:nowrap; }
 .rk[data-tip] { cursor:pointer; text-decoration:underline dotted;
   text-underline-offset:3px;
