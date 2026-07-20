@@ -188,5 +188,22 @@ class TestFreshnessGate(unittest.TestCase):
         self.assertIn("stale artifact", p.stderr + p.stdout)
 
 
+
+
+class TestRankChips(unittest.TestCase):
+    def test_summary_title_carries_ranks(self):
+        rankings = {"BUF": {"rank": 5}, "WSH": {"rank": 30}}
+        m = matchup("BUF", "WSH", 1)
+        out = BH.title_html(m, rankings)
+        self.assertIn('buf <span class="rk">#5</span>', out)
+        self.assertIn('wsh <span class="rk">#30</span>', out)
+
+    def test_missing_rankings_degrade_gracefully(self):
+        m = matchup("BUF", "WSH", 1)
+        self.assertEqual(BH.title_html(m, None), "buf @ wsh")
+        self.assertEqual(BH.title_html(m, {"BUF": {"rank": 5}}),
+                         'buf <span class="rk">#5</span> @ wsh')
+
+
 if __name__ == "__main__":
     unittest.main()

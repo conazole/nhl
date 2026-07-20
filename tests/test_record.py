@@ -121,5 +121,35 @@ class TestSortKeyCompat(unittest.TestCase):
         self.assertEqual(tier_of(leg("a @ b", 1, tier="avoid")), "avoid")
 
 
+class TestSeasonRankings(unittest.TestCase):
+    """run_analysis.rank_teams · the season u2.5 ranking order rule."""
+
+    def test_rate_desc_then_least_ga_pg_tiebreak(self):
+        import run_analysis as RA
+        stats = {
+            "AAA": {"gp": 10, "u25": 8, "ga": 12},   # 80% · ga/gp 1.2
+            "BBB": {"gp": 10, "u25": 8, "ga": 9},    # 80% · ga/gp 0.9 → wins tie
+            "CCC": {"gp": 20, "u25": 18, "ga": 30},  # 90% → rank 1
+            "DDD": {"gp": 10, "u25": 5, "ga": 5},    # 50% → last
+            "EEE": {"gp": 0, "u25": 0, "ga": 0},     # no games → unranked
+        }
+        r = RA.rank_teams(stats)
+        self.assertEqual(r["CCC"]["rank"], 1)
+        self.assertEqual(r["BBB"]["rank"], 2)
+        self.assertEqual(r["AAA"]["rank"], 3)
+        self.assertEqual(r["DDD"]["rank"], 4)
+        self.assertNotIn("EEE", r)
+        self.assertEqual(r["BBB"]["u25_pct"], 80.0)
+        self.assertEqual(r["BBB"]["ga_pg"], 0.9)
+
+    def test_full_tie_deterministic_by_abbrev(self):
+        import run_analysis as RA
+        stats = {"ZZZ": {"gp": 4, "u25": 3, "ga": 4},
+                 "AAA": {"gp": 4, "u25": 3, "ga": 4}}
+        r = RA.rank_teams(stats)
+        self.assertEqual(r["AAA"]["rank"], 1)
+        self.assertEqual(r["ZZZ"]["rank"], 2)
+
+
 if __name__ == "__main__":
     unittest.main()

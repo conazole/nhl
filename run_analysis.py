@@ -451,6 +451,88 @@ def walk_scores(target_date, teams_needed, games_tonight):
 
 
 # ============================================================
+# season u2.5 team rankings (display context · NOT scored)
+# ============================================================
+
+def rank_teams(stats):
+    """order accumulated per-team season stats into a ranking (user feature
+    2026-07-20): best u2.5 team first · u2.5 RATE desc (teams have unequal
+    games played mid-season), tie broken by least 1p goals allowed per game,
+    then abbrev asc so full ties stay deterministic. returns
+    {team: {rank, gp, u25, u25_pct, ga, ga_pg}}."""
+    rows = []
+    for team, s in stats.items():
+        gp = s["gp"]
+        if gp == 0:
+            continue
+        rows.append({"team": team, "gp": gp, "u25": s["u25"],
+                     "u25_pct": round(s["u25"] / gp * 100, 1),
+                     "ga": s["ga"], "ga_pg": round(s["ga"] / gp, 3)})
+    rows.sort(key=lambda r: (-r["u25_pct"], r["ga_pg"], r["team"]))
+    return {r["team"]: dict(r, rank=i) for i, r in enumerate(rows, 1)}
+
+
+def compute_season_rankings(target_date):
+    """full-season per-team 1p u2.5 ranking through target_date-1. walks the
+    whole season's scoreboards via the same immutable 'scores' cache as
+    walk_scores (first run of a season warms ~180 dates; after that only new
+    dates fetch). same scope rules as the windows: OFF/FINAL games,
+    gameType 2+3 only (preseason excluded), olympic break skipped."""
+    progress("phase 1b: season u2.5 rankings...")
+    season_floor = datetime(season_from_date(target_date), 9, 15)
+    ob = olympic_break(target_date)
+    ob_start = datetime.strptime(ob[0], "%Y-%m-%d") if ob else None
+    ob_end = datetime.strptime(ob[1], "%Y-%m-%d") if ob else None
+    stats = {}
+    cur = datetime.strptime(target_date, "%Y-%m-%d") - timedelta(days=1)
+    n_games = 0
+    while cur >= season_floor:
+        ds = cur.strftime("%Y-%m-%d")
+        if ob_start and ob_start <= cur <= ob_end:
+            cur -= timedelta(days=1)
+            continue
+        try:
+            cacheable = cur < (datetime.strptime(target_date, "%Y-%m-%d") - timedelta(days=1))
+            cached = cache_get("scores", ds) if cacheable else None
+            if cached:
+                data = cached
+            else:
+                data = api_get(SCORE_URL.format(ds))
+                if cacheable:
+                    cache_put("scores", ds, data)
+                time.sleep(0.03)
+        except Exception:
+            cur -= timedelta(days=1)
+            continue
+        for g in data.get("games", []):
+            if g.get("gameState") not in ("OFF", "FINAL"):
+                continue
+            if g.get("gameType", 2) not in (2, 3):
+                continue
+            aw = normalize_abbrev(g["awayTeam"]["abbrev"])
+            hm = normalize_abbrev(g["homeTeam"]["abbrev"])
+            a1p = h1p = 0
+            for gl in g.get("goals", []):
+                if gl.get("period") == 1:
+                    ta = normalize_abbrev(extract_team_abbrev(gl.get("teamAbbrev", "")))
+                    if ta == aw:
+                        a1p += 1
+                    elif ta == hm:
+                        h1p += 1
+            u = (a1p + h1p) <= 2
+            n_games += 1
+            for team, ga in ((aw, h1p), (hm, a1p)):
+                s = stats.setdefault(team, {"gp": 0, "u25": 0, "ga": 0})
+                s["gp"] += 1
+                s["u25"] += 1 if u else 0
+                s["ga"] += ga
+        cur -= timedelta(days=1)
+    rankings = rank_teams(stats)
+    progress(f"  {n_games} games, {len(rankings)} teams ranked")
+    return rankings
+
+
+# ============================================================
 # phase 2+3: boxscores + play-by-play (combined fetch)
 # ============================================================
 
@@ -1114,6 +1196,14 @@ def main():
         target_date, teams_needed, games_tonight)
     base_rate = league_u25 / league_total * 100 if league_total > 0 else 70.0
 
+    # phase 1b: season u2.5 team rankings (display context · not scored).
+    # a failure here must never sink the run · the slate works without ranks.
+    try:
+        season_rankings = compute_season_rankings(target_date)
+    except Exception as exc:
+        progress(f"  WARNING season rankings failed: {exc}")
+        season_rankings = {}
+
     # phase 2+3: boxscores + play-by-play
     game_details = fetch_all_game_details(gids)
 
@@ -1186,6 +1276,7 @@ def main():
         "moneypuck_ok": mpok,
         "teams": teams_out,
         "matchups": matchups,
+        "season_rankings": season_rankings,
         "elapsed_seconds": round(elapsed, 1),
     }
 

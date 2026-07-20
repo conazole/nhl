@@ -491,7 +491,23 @@ def context_rows(m, injuries, context_map):
     return f'<div class="gsec"><div class="gsec-h"><span>context</span></div>{"".join(rows)}</div>'
 
 
-def game_card(m, teams, line_lookup, injuries, context_map, tiers, legs, all_entries):
+def rank_chip(rankings, team):
+    """season u2.5 rank chip for a summary title (user feature 2026-07-20:
+    'buf #5 @ wsh #30') · rendered from the engine's season_rankings, the
+    full-season u2.5-rate ordering with least-1p-ga-per-game tiebreak.
+    display context only, never scored. empty when the engine has no
+    ranking for the team (old json, early season zero-gp)."""
+    r = (rankings or {}).get(team, {}).get("rank")
+    return f' <span class="rk">#{r}</span>' if r else ""
+
+
+def title_html(m, rankings):
+    return (f"{esc(m['away'].lower())}{rank_chip(rankings, m['away'])}"
+            f" @ {esc(m['home'].lower())}{rank_chip(rankings, m['home'])}")
+
+
+def game_card(m, teams, line_lookup, injuries, context_map, tiers, legs,
+              all_entries, rankings=None):
     g = game_str(m)
     f = m["factors"]
     conf = m["confidence"]
@@ -519,7 +535,7 @@ def game_card(m, teams, line_lookup, injuries, context_map, tiers, legs, all_ent
     return (f'<details class="game" id="{game_anchor(g)}" name="game-acc">'
             f'<summary><span class="g-conf">{conf_meter(conf, m.get("confidence_uncapped"))}'
             f'<span class="g-confn">{conf}/6</span></span>'
-            f'<span class="g-title">{esc(g)}</span>'
+            f'<span class="g-title">{title_html(m, rankings)}</span>'
             f'<span class="g-sub">line {esc(FO.format_line(m["total_line"]))} · '
             f'{esc(FO.pair_abbrev(f["goalie_pair"]))}</span>'
             f'<span class="g-right">{badge}{tag_chips}<span class="g-time">'
@@ -528,9 +544,10 @@ def game_card(m, teams, line_lookup, injuries, context_map, tiers, legs, all_ent
 
 
 def build_games(matchups, teams, line_lookup, injuries, context_map, tiers,
-                legs, all_entries):
+                legs, all_entries, rankings=None):
     cards = "".join(game_card(m, teams, line_lookup, injuries, context_map,
-                              tiers, legs, all_entries) for m in matchups)
+                              tiers, legs, all_entries, rankings)
+                    for m in matchups)
     return f'<section id="games"><div class="games">{cards}</div></section>'
 
 
@@ -815,6 +832,7 @@ details.game[open] {
 .g-confn { font:13px var(--mono); color:var(--muted);
   font-variant-numeric:tabular-nums; }
 .g-title { font:16px var(--disp); letter-spacing:.01em; white-space:nowrap; }
+.rk { font:11px var(--mono); color:var(--accent); white-space:nowrap; }
 .g-sub { font-size:13px; color:var(--muted); white-space:nowrap; }
 .g-right { margin-left:auto; display:flex; align-items:center; }
 .g-time { font:13px var(--mono); color:var(--muted); margin-left:9px; }
@@ -971,7 +989,8 @@ def build_page(date, data, extras, all_entries, mock=False):
         build_glance(matchups, tiers),
         build_hm_avoid(hms, avoids),
         build_games(matchups, data.get("teams", {}), line_lookup, injuries,
-                    context_map, tiers, legs, all_entries) if matchups else "",
+                    context_map, tiers, legs, all_entries,
+                    data.get("season_rankings")) if matchups else "",
         build_yesterday(all_entries, yesterday, postmortem),
         build_season(record, nights),
         f"<footer>{esc(model_v)} · r5 + day + goalie + line · /6 scale · "
