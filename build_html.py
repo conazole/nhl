@@ -322,7 +322,7 @@ def leg_row(i, m, log_entry=None):
             f'<span class="leg-n">{i}</span>'
             f'<div class="leg-mid"><span class="leg-bet">{esc(g)}</span>'
             f'<span class="leg-game">{esc(short_time(m["start_utc"]))} · '
-            f'line {esc(FO.format_line(m["total_line"]))}'
+            f'{esc(FO.format_line(m["total_line"]))}'
             f"{line_drift(log_entry)} · "
             f'{esc(FO.pair_abbrev(f["goalie_pair"]))}</span></div>'
             f'<div class="leg-right">{conf_meter(m["confidence"], m.get("confidence_uncapped"))}'
@@ -370,22 +370,19 @@ def fold(fid, title, body_html):
 def build_glance(matchups, tiers):
     if not matchups:
         return ""
+    # no notes column (user 2026-07-20: bet/avoid live in their own tables)
     rows = []
     for m in matchups:
         g = game_str(m)
-        t = tiers[g]
-        st = chip("bet", "bet") if t == "pick" else (chip("avoid", "no") if t == "avoid" else "")
-        tags = " · ".join(display_tags(m))
         f = m["factors"]
         rows.append(
             f'<tr><td><a class="glink" href="#{game_anchor(g)}">{esc(g)}</a></td>'
             f'<td class="num">{conf_num(m["confidence"])}</td>'
             f'<td class="num">{esc(FO.format_line(m["total_line"]))}</td>'
             f'<td>{esc(FO.pair_abbrev(f["goalie_pair"]))}</td>'
-            f'<td class="num">{esc(short_time(m["start_utc"]))}</td>'
-            f'<td>{st}{(" " + esc(tags)) if tags else ""}</td></tr>')
+            f'<td class="num">{esc(short_time(m["start_utc"]))}</td></tr>')
     table = (f'<div class="scroll"><table><thead><tr><th>game</th><th>conf</th>'
-             f"<th>line</th><th>pair</th><th>start</th><th>notes</th></tr>"
+             f"<th>line</th><th>pair</th><th>start</th></tr>"
              f'</thead><tbody>{"".join(rows)}</tbody></table></div>')
     return f'<section>{fold("slate", f"slate · {len(matchups)}", table)}</section>'
 
@@ -602,8 +599,7 @@ def game_card(m, teams, line_lookup, injuries, context_map, tiers, legs,
     r15_n = m.get("comb_r15_n", 30)
     r5_dd = f", {m.get('r5_shared', 0)} shared" if m.get("r5_shared") else ""
     rail = (f"r5 {m['comb_r5']}/{r5_n} ({m['comb_r5_pct']}%{r5_dd}) · "
-            f"r15 {m['comb_r15']}/{r15_n} ({m['comb_r15_pct']}%, unscored) · "
-            f"line {FO.format_line(m['total_line'])}")
+            f"r15 {m['comb_r15']}/{r15_n} ({m['comb_r15_pct']}%, unscored)")
     body = [f'<div class="grail">{factor_chips(f)}'
             f'<span class="grail-nums">{esc(rail)}</span></div>']
     if FO.miss_reason(m):
@@ -617,7 +613,7 @@ def game_card(m, teams, line_lookup, injuries, context_map, tiers, legs,
     return (f'<details class="game" id="{game_anchor(g)}" name="game-acc">'
             f'<summary><span class="g-conf">{conf_num(conf)}</span>'
             f'<span class="g-title">{title_html(m, rankings)}</span>'
-            f'<span class="g-sub">line {esc(FO.format_line(m["total_line"]))} · '
+            f'<span class="g-sub">{esc(FO.format_line(m["total_line"]))} · '
             f'{esc(FO.pair_abbrev(f["goalie_pair"]))}</span>'
             f'<span class="g-right">{badge}{tag_chips}<span class="g-time">'
             f'{esc(short_time(m["start_utc"]))}</span></span></summary>'

@@ -283,5 +283,18 @@ class TestFoldsAndWhyShorthand(unittest.TestCase):
         self.assertIn("6.0", out)
 
 
+class TestBareLineNumbers(unittest.TestCase):
+    def test_slip_leg_and_summary_show_bare_total(self):
+        m = matchup("A", "B", 5, line=6.0)
+        leg = BH.leg_row(1, m)
+        self.assertIn("7:00p · 6.0 · s+s", leg)
+        self.assertNotIn("line 6", leg)
+
+    def test_slate_has_no_notes_column(self):
+        ms = [matchup("A", "B", 5)]
+        glance = BH.build_glance(ms, BH.tier_map(ms, [], "2026-04-04"))
+        self.assertNotIn("<th>notes</th>", glance)
+
+
 if __name__ == "__main__":
     unittest.main()
