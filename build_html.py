@@ -146,6 +146,13 @@ def conf_meter(conf, uncapped=None):
             f'aria-label="confidence {conf} of 6">{"".join(segs)}</span>')
 
 
+def conf_num(conf):
+    """bare confidence number · the /6 scale is known and the meter got too
+    dominant outside the ticket slip (user 2026-07-20: 'too noisy'). the
+    slip keeps the meter; every other surface shows just the number."""
+    return f'<span class="confn" aria-label="confidence {conf} of 6">{conf}</span>'
+
+
 def factor_chips(f):
     """the scored factor strip as data chips (r15 stays out · unscored)."""
     out = []
@@ -326,7 +333,7 @@ def build_glance(matchups, tiers):
         f = m["factors"]
         rows.append(
             f'<tr><td><a class="glink" href="#{game_anchor(g)}">{esc(g)}</a></td>'
-            f'<td>{conf_meter(m["confidence"], m.get("confidence_uncapped"))}</td>'
+            f'<td class="num">{conf_num(m["confidence"])}</td>'
             f'<td class="num">{esc(FO.format_line(m["total_line"]))}</td>'
             f'<td>{esc(FO.pair_abbrev(f["goalie_pair"]))}</td>'
             f'<td class="num">{esc(short_time(m["start_utc"]))}</td>'
@@ -352,7 +359,7 @@ def build_hm_avoid(hms, avoids):
         rows = "".join(
             f'<tr><td><a class="glink" href="#{game_anchor(game_str(m))}">'
             f"{esc(game_str(m))}</a></td>"
-            f'<td>{conf_meter(m["confidence"], m.get("confidence_uncapped"))}</td>'
+            f'<td class="num">{conf_num(m["confidence"])}</td>'
             f"<td>{esc(why_text(m))}</td></tr>"
             for m in hms)
         boards.append(f'<div class="board-t"><div class="board-h">hm · why it misses'
@@ -372,7 +379,7 @@ def build_hm_avoid(hms, avoids):
             rows.append(
                 f'<tr><td><a class="glink" href="#{game_anchor(game_str(m))}">'
                 f"{esc(game_str(m))}</a></td>"
-                f'<td>{conf_meter(m["confidence"], m.get("confidence_uncapped"))}</td>'
+                f'<td class="num">{conf_num(m["confidence"])}</td>'
                 f'<td>{esc(", ".join(reasons) if reasons else "low factors")}</td></tr>')
         boards.append(f'<div class="board-t"><div class="board-h">avoid</div>'
                       f"<table><thead><tr><th>game</th><th>conf</th><th>reason</th>"
@@ -542,8 +549,7 @@ def game_card(m, teams, line_lookup, injuries, context_map, tiers, legs,
     body.append(team_block(m["home"], m, teams, line_lookup, "home"))
     body.append(context_rows(m, injuries, context_map))
     return (f'<details class="game" id="{game_anchor(g)}" name="game-acc">'
-            f'<summary><span class="g-conf">{conf_meter(conf, m.get("confidence_uncapped"))}'
-            f"</span>"
+            f'<summary><span class="g-conf">{conf_num(conf)}</span>'
             f'<span class="g-title">{title_html(m, rankings)}</span>'
             f'<span class="g-sub">line {esc(FO.format_line(m["total_line"]))} · '
             f'{esc(FO.pair_abbrev(f["goalie_pair"]))}</span>'
@@ -580,8 +586,7 @@ def build_yesterday(all_entries, yesterday, postmortem_text):
             if e["result"] == "void":
                 det = "postponed · excluded"
             else:
-                det = (f'1p {e.get("actual_1p_total")} '
-                       f'{conf_meter(e.get("confidence", 0), e.get("confidence_uncapped"))}')
+                det = f'1p {e.get("actual_1p_total")} · conf {e.get("confidence")}'
             rows.append(f'<div class="rleg"><span class="rmark {k}">{mk}</span>'
                         f'<div class="rleg-m"><div class="rleg-top">'
                         f'<span class="rleg-pick">{esc(e["game"])}</span>'
@@ -785,6 +790,8 @@ a.leg:active .leg-bet, a.leg:hover .leg-bet { color:var(--accent); }
 .pill.loss { color:var(--loss); background:var(--loss-soft); }
 .pill.pend { color:var(--pend); background:var(--pend-soft); }
 .pill.push { color:var(--void); background:var(--surface2); }
+.confn { font:15px var(--mono); color:var(--accent);
+  font-variant-numeric:tabular-nums; }
 .meter { display:inline-flex; gap:2.5px; align-items:center; }
 .meter .seg { width:7px; height:12px; border-radius:2px;
   background:var(--surface2);
