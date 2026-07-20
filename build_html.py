@@ -146,6 +146,40 @@ def conf_meter(conf, uncapped=None):
             f'aria-label="confidence {conf} of 6">{"".join(segs)}</span>')
 
 
+_LINE_F = (FO.PARAMS.get("factors") or {}).get("line") or {}
+_LINE_PLUS = _LINE_F.get("plus", 5.5)
+_LINE_ZERO = _LINE_F.get("zero", 6.0)
+
+
+def line_factor(v):
+    """the line factor the model would score at total v · thresholds from
+    model_params (same policy the engine reads)."""
+    return 1 if v <= _LINE_PLUS else (0 if v <= _LINE_ZERO else -1)
+
+
+def line_drift(entry):
+    """opening→closing line drift arrow for a slip leg · clv made visible
+    pre-bet (user feature 2026-07-20, iphone-first: tap shows the detail).
+    reads the log entry's clv fields (update_log writes closing_line when a
+    later run sees a moved line). for u2.5, line UP = market pricing more
+    goals = against us. flags when the move crossed a line-factor boundary ·
+    a half point can flip the pick (the gate-straddle trap)."""
+    if not entry:
+        return ""
+    o, c = entry.get("total_line"), entry.get("closing_line")
+    if o is None or c is None or c == o:
+        return ""
+    against = c > o
+    arrow = "↗" if against else "↘"
+    word = "market against" if against else "market toward us"
+    tip = f"open {FO.format_line(o)} → {FO.format_line(c)} · {word}"
+    if line_factor(o) != line_factor(c):
+        tip += " · line factor flips at this number · re-check before betting"
+    k = "against" if against else "toward"
+    return (f' <span class="drift {k}" data-tip="{esc(tip)}" tabindex="0" '
+            f'role="button" aria-label="line drift · {esc(tip)}">{arrow}</span>')
+
+
 def conf_num(conf):
     """bare confidence number · the /6 scale is known and the meter got too
     dominant outside the ticket slip (user 2026-07-20: 'too noisy'). the
@@ -281,24 +315,27 @@ def build_health(date):
 
 
 # ---------------------------------------------------------------- ticket
-def leg_row(i, m):
+def leg_row(i, m, log_entry=None):
     g = game_str(m)
     f = m["factors"]
     return (f'<a class="leg" href="#{game_anchor(g)}">'
             f'<span class="leg-n">{i}</span>'
             f'<div class="leg-mid"><span class="leg-bet">{esc(g)}</span>'
             f'<span class="leg-game">{esc(short_time(m["start_utc"]))} · '
-            f'line {esc(FO.format_line(m["total_line"]))} · '
+            f'line {esc(FO.format_line(m["total_line"]))}'
+            f"{line_drift(log_entry)} · "
             f'{esc(FO.pair_abbrev(f["goalie_pair"]))}</span></div>'
             f'<div class="leg-right">{conf_meter(m["confidence"], m.get("confidence_uncapped"))}'
             f"</div></a>")
 
 
-def build_ticket(legs, hms, matchups):
+def build_ticket(legs, hms, matchups, log_by_game=None):
     # title is just "u2.5" · less is more (user 2026-07-20); the n/6 text next
     # to any meter was cut the same day · the meter alone carries confidence
     if len(legs) >= 2:
-        rows = "".join(leg_row(i, m) for i, m in enumerate(legs, 1))
+        rows = "".join(
+            leg_row(i, m, (log_by_game or {}).get(game_str(m)))
+            for i, m in enumerate(legs, 1))
         return (f'<section id="ticket"><div class="slip">'
                 f'<div class="slip-head"><span class="slip-title">u2.5</span>'
                 f'</div><div class="legs">{rows}</div></div></section>')
@@ -866,12 +903,19 @@ details.game[open] {
 .rk { font:11px var(--mono); color:var(--accent); white-space:nowrap; }
 .rk[data-tip] { cursor:pointer; border-bottom:1px dotted
   color-mix(in srgb,var(--accent) 55%,transparent); }
-.rk[data-tip]:focus-visible { outline:2px solid var(--accent);
+/* iphone-first: thumb-size hit area without moving the visual (padding
+   grown, margin pulls it back) · applies to every tappable tip source */
+[data-tip] { padding:8px 6px; margin:-8px -6px;
+  -webkit-tap-highlight-color:transparent; }
+[data-tip]:focus-visible { outline:2px solid var(--accent);
   outline-offset:2px; }
+.drift { font:13px var(--mono); cursor:pointer; }
+.drift.against { color:var(--pend); }
+.drift.toward { color:var(--win); }
 .tip { position:fixed; z-index:30; background:var(--surface2);
   border:1px solid var(--line); border-radius:8px; padding:6px 11px;
-  font:12px var(--mono); color:var(--ink); box-shadow:var(--shadow);
-  white-space:nowrap; pointer-events:none; }
+  font:12px/1.5 var(--mono); color:var(--ink); box-shadow:var(--shadow);
+  max-width:min(92vw, 340px); pointer-events:none; }
 .g-sub { font-size:13px; color:var(--muted); white-space:nowrap; }
 .g-right { margin-left:auto; display:flex; align-items:center; }
 .g-time { font:13px var(--mono); color:var(--muted); margin-left:9px; }
@@ -1051,7 +1095,9 @@ def build_page(date, data, extras, all_entries, mock=False):
         '<div class="wrap">',
         build_masthead(len(matchups), record, nights),
         build_health(date),
-        build_ticket(legs, hms, matchups),
+        build_ticket(legs, hms, matchups,
+                     {e.get("game"): e for e in all_entries
+                      if e.get("date") == date and e.get("model") == "v4"}),
         build_glance(matchups, tiers),
         build_hm_avoid(hms, avoids),
         build_games(matchups, data.get("teams", {}), line_lookup, injuries,

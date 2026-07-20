@@ -224,5 +224,38 @@ class TestDisplayTags(unittest.TestCase):
         self.assertEqual(BH.display_tags(page_m), [])
 
 
+class TestLineDrift(unittest.TestCase):
+    def test_no_entry_or_no_move_renders_nothing(self):
+        self.assertEqual(BH.line_drift(None), "")
+        self.assertEqual(BH.line_drift({"total_line": 6.0}), "")
+        self.assertEqual(BH.line_drift({"total_line": 6.0,
+                                        "closing_line": 6.0}), "")
+
+    def test_market_against_flags_factor_flip(self):
+        out = BH.line_drift({"total_line": 6.0, "closing_line": 6.5})
+        self.assertIn("↗", out)
+        self.assertIn("drift against", out)
+        self.assertIn("open 6.0 → 6.5 · market against", out)
+        self.assertIn("line factor flips", out)     # 6.0→6.5 crosses the gate
+
+    def test_market_toward_us_no_flip_within_band(self):
+        out = BH.line_drift({"total_line": 6.5, "closing_line": 7.0})
+        self.assertIn("↗", out)
+        self.assertNotIn("flips", out)              # -1 band both sides
+        out2 = BH.line_drift({"total_line": 6.0, "closing_line": 5.5})
+        self.assertIn("↘", out2)
+        self.assertIn("drift toward", out2)
+        self.assertIn("market toward us", out2)
+
+    def test_slip_leg_carries_drift_from_log(self):
+        m = matchup("A", "B", 5)
+        entry = log_entry("a @ b")
+        entry["closing_line"] = 6.5
+        html = BH.leg_row(1, m, entry)
+        self.assertIn("drift against", html)
+        # and stays clean without clv fields (all pre-jul-2026 entries)
+        self.assertNotIn("drift", BH.leg_row(1, m, log_entry("a @ b")))
+
+
 if __name__ == "__main__":
     unittest.main()
