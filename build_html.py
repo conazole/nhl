@@ -332,40 +332,18 @@ def leg_row(i, m, log_entry=None):
             f"</div></a>")
 
 
-def bet_window(legs):
-    """the pre-bet checklist on the slip (user feature 2026-07-20): one lamp
-    for goalie confirmations across both legs + a live countdown to the
-    first puck drop (js ticks it). dfo confirmation discipline is the house
-    rule · the 5 missed predictions went 1-4."""
-    unconfirmed = sum(1 for m in legs
-                      for c in (m.get("aw_confirmed"), m.get("hm_confirmed"))
-                      if not c)
-    if unconfirmed == 0:
-        lamp, txt = "w", "all goalies confirmed"
-    else:
-        lamp, txt = "p", f"{unconfirmed} unconfirmed · check dfo"
-    first = min(m["start_utc"] for m in legs)
-    # epoch ms, not the iso string · the page-wide year-strip shorthand
-    # would mangle "2026-..." inside the attribute and kill the countdown
-    epoch = int(datetime.fromisoformat(first.replace("Z", "+00:00")).timestamp() * 1000)
-    return (f'<div class="slip-win"><i class="lamp {lamp}"></i>'
-            f"<span>{esc(txt)}</span>"
-            f'<span class="slip-count" data-start="{epoch}">'
-            f"first puck {esc(short_time(first))}</span></div>")
-
-
 def build_ticket(legs, hms, matchups, log_by_game=None):
     # title is just "u2.5" · less is more (user 2026-07-20); the n/6 text next
-    # to any meter was cut the same day · the meter alone carries confidence
+    # to any meter was cut the same day · the meter alone carries confidence.
+    # no bet-window line, no focus button · shipped and removed the same day
+    # (user: tacky) · do not re-add.
     if len(legs) >= 2:
         rows = "".join(
             leg_row(i, m, (log_by_game or {}).get(game_str(m)))
             for i, m in enumerate(legs, 1))
         return (f'<section id="ticket"><div class="slip">'
                 f'<div class="slip-head"><span class="slip-title">u2.5</span>'
-                f'<button class="focusbtn" id="focusbtn" '
-                f'aria-label="focus the ticket">⤢</button></div>'
-                f'<div class="legs">{rows}</div>{bet_window(legs)}</div></section>')
+                f'</div><div class="legs">{rows}</div></div></section>')
     solo = [m for m in matchups if m["confidence"] >= 4]
     if not matchups:
         note = "no play tonight · 0 games scheduled"
@@ -891,22 +869,6 @@ a.leg:active .leg-bet, a.leg:hover .leg-bet { color:var(--accent); }
 .leg-bet { font:17px var(--mono); letter-spacing:-.01em; white-space:nowrap; }
 .leg-game { font-size:13px; color:var(--muted); white-space:nowrap; }
 .leg-right { display:flex; align-items:center; }
-/* bet window + focus */
-.slip-win { display:flex; align-items:center; gap:6px 9px; margin-top:11px;
-  padding-top:10px; border-top:1px dashed var(--line); flex-wrap:wrap;
-  font:12.5px var(--mono); color:var(--muted); }
-.slip-win .lamp { flex:none; }
-.slip-win > span:first-of-type { white-space:nowrap; }
-.slip-count { margin-left:auto; font-variant-numeric:tabular-nums;
-  white-space:nowrap; }
-.focusbtn { margin-left:auto; background:none; border:1px solid var(--line);
-  border-radius:8px; color:var(--accent); font:15px/1 var(--mono);
-  padding:6px 10px; cursor:pointer;
-  -webkit-tap-highlight-color:transparent; }
-.focusbtn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
-body.tfocus nav, body.tfocus .totop,
-body.tfocus .wrap > :not(#ticket) { display:none; }
-body.tfocus .wrap { padding-top:16px; }
 /* per-team folds inside a game card */
 .tfold { border-top:1px solid var(--line); margin-top:16px; }
 .tfold > summary { display:flex; justify-content:space-between;
@@ -1130,24 +1092,6 @@ JS = (
     "var m=d.scrollHeight-d.clientHeight;"
     'pb.style.transform="scaleX("+(m>0?d.scrollTop/m:0)+")";}'
     'addEventListener("scroll",u,{passive:true});u();})();'
-    # ticket focus mode: one button strips the page to just the slip
-    "(function(){"
-    'var b=document.getElementById("focusbtn");if(!b)return;'
-    'b.addEventListener("click",function(e){e.preventDefault();e.stopPropagation();'
-    'var on=document.body.classList.toggle("tfocus");'
-    'b.textContent=on?"✕":"⤢";'
-    'b.setAttribute("aria-label",on?"exit focus":"focus the ticket");});'
-    "})();"
-    # live countdown to the first puck drop (bet window)
-    "(function(){"
-    'var c=document.querySelector(".slip-count");if(!c)return;'
-    'var t=parseInt(c.getAttribute("data-start"),10);if(!t)return;'
-    "var base=c.textContent;"
-    "function u(){var d=t-Date.now();"
-    'if(d<=0){c.textContent=base+" · underway";return;}'
-    "var h=Math.floor(d/36e5),m=Math.floor((d%36e5)/6e4);"
-    'c.textContent=base+" · in "+(h>0?h+"h ":"")+m+"m";'
-    "setTimeout(u,30000);}u();})();"
     # streak strip as an index: tapping a mark opens the team fold and
     # flashes the matching table row (capture so the summary never toggles)
     'document.addEventListener("click",function(e){'

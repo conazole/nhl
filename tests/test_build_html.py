@@ -298,20 +298,6 @@ class TestBareLineNumbers(unittest.TestCase):
 
 
 class TestBatch0720(unittest.TestCase):
-    def test_bet_window_lamp_states(self):
-        legs = [matchup("A", "B", 5), matchup("C", "D", 4)]
-        out = BH.bet_window(legs)          # fixture has 1 unconfirmed per leg
-        self.assertIn("2 unconfirmed · check dfo", out)
-        self.assertIn('lamp p', out)
-        # epoch ms, never the iso string (the year-strip shorthand would
-        # mangle it and kill the countdown)
-        self.assertRegex(out, r'data-start="\d{13}"')
-        for m in legs:
-            m["hm_confirmed"] = True
-        out = BH.bet_window(legs)
-        self.assertIn("all goalies confirmed", out)
-        self.assertIn('lamp w', out)
-
     def test_rank_tip_carries_week_delta(self):
         r = {"BUF": {"rank": 5, "gp": 15, "u25": 12, "ga_pg": 0.7, "delta7": 4},
              "WSH": {"rank": 30, "gp": 15, "u25": 9, "ga_pg": 1.2, "delta7": -3}}
@@ -340,11 +326,6 @@ class TestBatch0720(unittest.TestCase):
         self.assertIn('<details class="tfold">', out)
         self.assertNotIn("<details open", out)     # closed by default
         self.assertIn('data-row="0"', out)         # tappable strip mark
-
-    def test_slip_has_focus_button(self):
-        legs = [matchup("A", "B", 5), matchup("C", "D", 4)]
-        out = BH.build_ticket(legs, [], legs)
-        self.assertIn('id="focusbtn"', out)
 
 
 if __name__ == "__main__":
