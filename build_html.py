@@ -387,10 +387,12 @@ def build_ticket(legs, hms, matchups, log_by_game=None):
 # ---------------------------------------------------------------- slate + boards
 def fold(fid, title, body_html):
     """collapsed-by-default table fold (user 2026-07-20: 'i want to look at
-    them when i choose, not on my face'). the generic hash handler opens it
-    when a nav link targets its id."""
+    them when i choose, not on my face'). slate/hm/avoid share one exclusive
+    group (name=) · opening one closes whichever was open (user, same day).
+    the generic hash handler opens it when a nav link targets its id."""
     fid_attr = f' id="{fid}"' if fid else ""
-    return (f'<details class="fold"{fid_attr}><summary>{esc(title)}</summary>'
+    return (f'<details class="fold"{fid_attr} name="board-acc">'
+            f"<summary>{esc(title)}</summary>"
             f'<div class="fold-b">{body_html}</div></details>')
 
 

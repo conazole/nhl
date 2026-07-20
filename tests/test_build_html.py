@@ -262,7 +262,8 @@ class TestFoldsAndWhyShorthand(unittest.TestCase):
         ms = [matchup("A", "B", 5), matchup("C", "D", 4),
               matchup("E", "F", 3), matchup("G", "H", 1)]
         glance = BH.build_glance(ms, BH.tier_map(ms, [], "2026-04-04"))
-        self.assertIn('<details class="fold" id="slate">', glance)
+        # one exclusive group: opening one board fold closes the others
+        self.assertIn('<details class="fold" id="slate" name="board-acc">', glance)
         self.assertNotIn("<details open", glance)
         self.assertIn("slate · 4", glance)
         boards = BH.build_hm_avoid([ms[2]], [ms[3]])
