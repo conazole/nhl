@@ -597,8 +597,13 @@ def rank_chip(rankings, team):
 
 
 def title_html(m, rankings):
-    return (f"{esc(m['away'].lower())}{rank_chip(rankings, m['away'])}"
-            f" @ {esc(m['home'].lower())}{rank_chip(rankings, m['home'])}")
+    """away and home in fixed sub-columns so the @ sits at the same x on
+    every card (user 2026-07-20 · abbrev/rank widths vary)."""
+    return (f'<span class="g-away">{esc(m["away"].lower())}'
+            f'{rank_chip(rankings, m["away"])}</span>'
+            f'<span class="g-at">@</span>'
+            f'<span class="g-home">{esc(m["home"].lower())}'
+            f'{rank_chip(rankings, m["home"])}</span>')
 
 
 def game_card(m, teams, line_lookup, injuries, context_map, tiers, legs,
@@ -976,7 +981,10 @@ details.game[open] {
    (user 2026-07-20: "some are crooked") · widest real title ("chi #32 @
    sea #31") fits inside 150px */
 .g-title { font:16px var(--disp); letter-spacing:.01em; white-space:nowrap;
-  flex:0 0 150px; }
+  flex:0 0 150px; display:flex; align-items:baseline; }
+.g-away { flex:0 0 64px; white-space:nowrap; }
+.g-at { flex:0 0 22px; text-align:center; }
+.g-home { white-space:nowrap; }
 .rk { font:11px var(--mono); color:var(--accent); white-space:nowrap; }
 .rk[data-tip] { cursor:pointer; text-decoration:underline dotted;
   text-underline-offset:3px;

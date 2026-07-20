@@ -207,7 +207,11 @@ class TestRankChips(unittest.TestCase):
 
     def test_missing_rankings_degrade_gracefully(self):
         m = matchup("BUF", "WSH", 1)
-        self.assertEqual(BH.title_html(m, None), "buf @ wsh")
+        out = BH.title_html(m, None)
+        # away/home in fixed sub-columns so the @ aligns across cards
+        self.assertIn('<span class="g-away">buf</span>', out)
+        self.assertIn('<span class="g-at">@</span>', out)
+        self.assertIn('<span class="g-home">wsh</span>', out)
         # rank without stats → chip renders, no tip
         out = BH.title_html(m, {"BUF": {"rank": 5}})
         self.assertIn("#5", out)
