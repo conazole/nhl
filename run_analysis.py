@@ -472,13 +472,20 @@ def rank_teams(stats):
     return {r["team"]: dict(r, rank=i) for i, r in enumerate(rows, 1)}
 
 
-def compute_season_rankings(target_date):
-    """full-season per-team 1p u2.5 ranking through target_date-1. walks the
-    whole season's scoreboards via the same immutable 'scores' cache as
-    walk_scores (first run of a season warms ~180 dates; after that only new
-    dates fetch). same scope rules as the windows: OFF/FINAL games,
-    gameType 2+3 only (preseason excluded), olympic break skipped."""
-    progress("phase 1b: season u2.5 rankings...")
+RANK_WINDOW = 15      # rolling form window · same frame as the 15-game tables
+N_TEAMS = 32
+
+
+def compute_team_rankings(target_date):
+    """rolling last-{RANK_WINDOW}-games per-team 1p u2.5 ranking through
+    target_date-1 (user 2026-07-20: teams change · current form beats a
+    season-long running rank, and 15 matches the report's own window).
+    walks scoreboards backward via the same immutable 'scores' cache as
+    walk_scores, stopping once every team has a full window (or at the
+    season floor · early-season teams rank on the games they have). same
+    scope rules as the windows: OFF/FINAL games, gameType 2+3 only
+    (preseason excluded), olympic break skipped."""
+    progress(f"phase 1b: u2.5 form rankings (last {RANK_WINDOW})...")
     season_floor = datetime(season_from_date(target_date), 9, 15)
     ob = olympic_break(target_date)
     ob_start = datetime.strptime(ob[0], "%Y-%m-%d") if ob else None
@@ -521,14 +528,21 @@ def compute_season_rankings(target_date):
                         h1p += 1
             u = (a1p + h1p) <= 2
             n_games += 1
+            # walking backward, so the first RANK_WINDOW games seen per team
+            # are its most recent · past-window games don't accumulate
             for team, ga in ((aw, h1p), (hm, a1p)):
                 s = stats.setdefault(team, {"gp": 0, "u25": 0, "ga": 0})
+                if s["gp"] >= RANK_WINDOW:
+                    continue
                 s["gp"] += 1
                 s["u25"] += 1 if u else 0
                 s["ga"] += ga
+        if (len(stats) >= N_TEAMS
+                and all(s["gp"] >= RANK_WINDOW for s in stats.values())):
+            break
         cur -= timedelta(days=1)
     rankings = rank_teams(stats)
-    progress(f"  {n_games} games, {len(rankings)} teams ranked")
+    progress(f"  {n_games} games walked, {len(rankings)} teams ranked")
     return rankings
 
 
@@ -1196,13 +1210,13 @@ def main():
         target_date, teams_needed, games_tonight)
     base_rate = league_u25 / league_total * 100 if league_total > 0 else 70.0
 
-    # phase 1b: season u2.5 team rankings (display context · not scored).
+    # phase 1b: u2.5 form rankings (display context · not scored).
     # a failure here must never sink the run · the slate works without ranks.
     try:
-        season_rankings = compute_season_rankings(target_date)
+        team_rankings = compute_team_rankings(target_date)
     except Exception as exc:
-        progress(f"  WARNING season rankings failed: {exc}")
-        season_rankings = {}
+        progress(f"  WARNING team rankings failed: {exc}")
+        team_rankings = {}
 
     # phase 2+3: boxscores + play-by-play
     game_details = fetch_all_game_details(gids)
@@ -1276,7 +1290,8 @@ def main():
         "moneypuck_ok": mpok,
         "teams": teams_out,
         "matchups": matchups,
-        "season_rankings": season_rankings,
+        "team_rankings": team_rankings,
+        "rank_window": RANK_WINDOW,
         "elapsed_seconds": round(elapsed, 1),
     }
 

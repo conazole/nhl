@@ -329,7 +329,7 @@ def build_glance(matchups, tiers):
         g = game_str(m)
         t = tiers[g]
         st = chip("bet", "bet") if t == "pick" else (chip("avoid", "no") if t == "avoid" else "")
-        tags = FO.game_tags(m)
+        tags = " · ".join(display_tags(m))
         f = m["factors"]
         rows.append(
             f'<tr><td><a class="glink" href="#{game_anchor(g)}">{esc(g)}</a></td>'
@@ -342,6 +342,12 @@ def build_glance(matchups, tiers):
             f"<table><thead><tr><th>game</th><th>conf</th><th>line</th>"
             f"<th>pair</th><th>start</th><th>notes</th></tr></thead>"
             f'<tbody>{"".join(rows)}</tbody></table></div></div></section>')
+
+
+def display_tags(m):
+    """summary tags for the html surface · 'day' is dropped (the start time
+    already says it · user 2026-07-20); playoff/no-line/short-window stay."""
+    return [t for t in FO.game_tags(m).split(" · ") if t and t != "day"]
 
 
 def why_text(m):
@@ -509,9 +515,10 @@ def context_rows(m, injuries, context_map):
 
 
 def rank_chip(rankings, team):
-    """season u2.5 rank chip for a summary title (user feature 2026-07-20:
-    'buf #5 @ wsh #30') · rendered from the engine's season_rankings, the
-    full-season u2.5-rate ordering with least-1p-ga-per-game tiebreak.
+    """u2.5 form-rank chip for a summary title (user feature 2026-07-20:
+    'buf #5 @ wsh #30') · rendered from the engine's team_rankings, the
+    rolling last-15 u2.5-rate ordering with least-1p-ga-per-game tiebreak
+    (current form beats a season-long running rank · user, same day).
     display context only, never scored. empty when the engine has no
     ranking for the team (old json, early season zero-gp)."""
     r = (rankings or {}).get(team, {}).get("rank")
@@ -528,8 +535,7 @@ def game_card(m, teams, line_lookup, injuries, context_map, tiers, legs,
     g = game_str(m)
     f = m["factors"]
     conf = m["confidence"]
-    tags = FO.game_tags(m)
-    tag_chips = "".join(chip(t) for t in tags.split(" · ") if t)
+    tag_chips = "".join(chip(t) for t in display_tags(m))
     tier = tiers[g]
     badge = chip("bet", "bet") if tier == "pick" else ""
     r5_n = m.get("comb_r5_n", 10)
@@ -1006,7 +1012,8 @@ def build_page(date, data, extras, all_entries, mock=False):
         build_hm_avoid(hms, avoids),
         build_games(matchups, data.get("teams", {}), line_lookup, injuries,
                     context_map, tiers, legs, all_entries,
-                    data.get("season_rankings")) if matchups else "",
+                    data.get("team_rankings") or data.get("season_rankings"))
+        if matchups else "",
         build_yesterday(all_entries, yesterday, postmortem),
         build_season(record, nights),
         f"<footer>{esc(model_v)} · r5 + day + goalie + line · /6 scale · "

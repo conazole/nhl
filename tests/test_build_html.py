@@ -208,5 +208,15 @@ class TestRankChips(unittest.TestCase):
                          'buf <span class="rk">#5</span> @ wsh')
 
 
+class TestDisplayTags(unittest.TestCase):
+    def test_day_tag_dropped_others_kept(self):
+        m = matchup("BUF", "WSH", 1, is_day_game=True, line_missing=True)
+        tags = BH.display_tags(m)
+        self.assertNotIn("day", tags)
+        self.assertIn("no line", tags)
+        page_m = matchup("BUF", "WSH", 1, is_day_game=True)
+        self.assertEqual(BH.display_tags(page_m), [])
+
+
 if __name__ == "__main__":
     unittest.main()
