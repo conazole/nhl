@@ -284,15 +284,17 @@ def leg_row(i, m):
             f'line {esc(FO.format_line(m["total_line"]))} · '
             f'{esc(FO.pair_abbrev(f["goalie_pair"]))}</span></div>'
             f'<div class="leg-right">{conf_meter(m["confidence"], m.get("confidence_uncapped"))}'
-            f'<span class="leg-est">{m["confidence"]}/6</span></div></a>')
+            f"</div></a>")
 
 
 def build_ticket(legs, hms, matchups):
+    # title is just "u2.5" · less is more (user 2026-07-20); the n/6 text next
+    # to any meter was cut the same day · the meter alone carries confidence
     if len(legs) >= 2:
         rows = "".join(leg_row(i, m) for i, m in enumerate(legs, 1))
         return (f'<section id="ticket"><div class="slip">'
-                f'<div class="slip-head"><span class="slip-title">tonight · 1p u2.5 ·'
-                f' 2 legs</span></div><div class="legs">{rows}</div></div></section>')
+                f'<div class="slip-head"><span class="slip-title">u2.5</span>'
+                f'</div><div class="legs">{rows}</div></div></section>')
     solo = [m for m in matchups if m["confidence"] >= 4]
     if not matchups:
         note = "no play tonight · 0 games scheduled"
@@ -300,14 +302,14 @@ def build_ticket(legs, hms, matchups):
         m = solo[0]
         note = (f'no parlay tonight · only <a class="glink" '
                 f'href="#{game_anchor(game_str(m))}">{esc(game_str(m))}</a> '
-                f"qualifies ({m['confidence']}/6) · logged as hm (2-leg rule)")
+                f"qualifies · logged as hm (2-leg rule)")
     else:
         near = hms[0] if hms else None
         near_s = (f' · nearest: <a class="glink" href="#{game_anchor(game_str(near))}">'
-                  f"{esc(game_str(near))}</a> ({near['confidence']}/6)") if near else ""
-        note = f"no play tonight · nothing at 4/6{near_s}"
+                  f"{esc(game_str(near))}</a>") if near else ""
+        note = f"no play tonight · nothing qualifies{near_s}"
     return (f'<section id="ticket"><div class="slip"><div class="slip-head">'
-            f'<span class="slip-title">tonight</span></div>'
+            f'<span class="slip-title">u2.5</span></div>'
             f'<p class="slip-note">{note}</p></div></section>')
 
 
@@ -324,7 +326,7 @@ def build_glance(matchups, tiers):
         f = m["factors"]
         rows.append(
             f'<tr><td><a class="glink" href="#{game_anchor(g)}">{esc(g)}</a></td>'
-            f'<td class="num">{m["confidence"]}/6</td>'
+            f'<td>{conf_meter(m["confidence"], m.get("confidence_uncapped"))}</td>'
             f'<td class="num">{esc(FO.format_line(m["total_line"]))}</td>'
             f'<td>{esc(FO.pair_abbrev(f["goalie_pair"]))}</td>'
             f'<td class="num">{esc(short_time(m["start_utc"]))}</td>'
@@ -335,14 +337,23 @@ def build_glance(matchups, tiers):
             f'<tbody>{"".join(rows)}</tbody></table></div></div></section>')
 
 
+def why_text(m):
+    """miss_reason for the html surface · the leading n/6 and 'capped from
+    n/6' are stripped because the adjacent meter (with its cap ghosts)
+    already carries both (user 2026-07-20)."""
+    why = FO.miss_reason(m) or FO.game_tags(m)
+    why = re.sub(r"^capped from \d/6: ", "capped · ", why)
+    return re.sub(r"^\d/6 · ", "", why)
+
+
 def build_hm_avoid(hms, avoids):
     boards = []
     if hms:
         rows = "".join(
             f'<tr><td><a class="glink" href="#{game_anchor(game_str(m))}">'
             f"{esc(game_str(m))}</a></td>"
-            f'<td class="num">{m["confidence"]}/6</td>'
-            f'<td>{esc(FO.miss_reason(m) or FO.game_tags(m))}</td></tr>'
+            f'<td>{conf_meter(m["confidence"], m.get("confidence_uncapped"))}</td>'
+            f"<td>{esc(why_text(m))}</td></tr>"
             for m in hms)
         boards.append(f'<div class="board-t"><div class="board-h">hm · why it misses'
                       f"</div><table><thead><tr><th>game</th><th>conf</th><th>why</th>"
@@ -361,7 +372,7 @@ def build_hm_avoid(hms, avoids):
             rows.append(
                 f'<tr><td><a class="glink" href="#{game_anchor(game_str(m))}">'
                 f"{esc(game_str(m))}</a></td>"
-                f'<td class="num">{m["confidence"]}/6</td>'
+                f'<td>{conf_meter(m["confidence"], m.get("confidence_uncapped"))}</td>'
                 f'<td>{esc(", ".join(reasons) if reasons else "low factors")}</td></tr>')
         boards.append(f'<div class="board-t"><div class="board-h">avoid</div>'
                       f"<table><thead><tr><th>game</th><th>conf</th><th>reason</th>"
@@ -383,8 +394,7 @@ def pick_panel(m, all_entries, leg_no):
     rows.append(_kv("factors", factor_chips(m["factors"])))
     w, l = FO.conf_record(all_entries, m["confidence"])
     if w + l > 0:
-        rows.append(_kv("tier", f"{m['confidence']}/6 season: {w}-{l} "
-                                f"({100 * w / (w + l):.1f}%)"))
+        rows.append(_kv("tier", f"season {w}-{l} ({100 * w / (w + l):.1f}%)"))
     frag = FO.leg_fragility(m)
     if frag:
         rows.append(_kv("risk", esc(frag)))
@@ -523,9 +533,8 @@ def game_card(m, teams, line_lookup, injuries, context_map, tiers, legs,
             f"line {FO.format_line(m['total_line'])}")
     body = [f'<div class="grail">{factor_chips(f)}'
             f'<span class="grail-nums">{esc(rail)}</span></div>']
-    why = FO.miss_reason(m)
-    if why:
-        body.append(f'<p class="miss">misses the ticket: {esc(why)}</p>')
+    if FO.miss_reason(m):
+        body.append(f'<p class="miss">misses the ticket: {esc(why_text(m))}</p>')
     if tier == "pick":
         leg_no = next((i for i, lm in enumerate(legs, 1) if lm is m), 1)
         body.append(pick_panel(m, all_entries, leg_no))
@@ -534,7 +543,7 @@ def game_card(m, teams, line_lookup, injuries, context_map, tiers, legs,
     body.append(context_rows(m, injuries, context_map))
     return (f'<details class="game" id="{game_anchor(g)}" name="game-acc">'
             f'<summary><span class="g-conf">{conf_meter(conf, m.get("confidence_uncapped"))}'
-            f'<span class="g-confn">{conf}/6</span></span>'
+            f"</span>"
             f'<span class="g-title">{title_html(m, rankings)}</span>'
             f'<span class="g-sub">line {esc(FO.format_line(m["total_line"]))} · '
             f'{esc(FO.pair_abbrev(f["goalie_pair"]))}</span>'
@@ -568,12 +577,15 @@ def build_yesterday(all_entries, yesterday, postmortem_text):
         rows = []
         for e in picks_y:
             mk, k = _RES_MK.get(e["result"], ("·", "p"))
-            det = (f'1p {e.get("actual_1p_total")}, {e.get("confidence")}/6'
-                   if e["result"] != "void" else "postponed · excluded")
+            if e["result"] == "void":
+                det = "postponed · excluded"
+            else:
+                det = (f'1p {e.get("actual_1p_total")} '
+                       f'{conf_meter(e.get("confidence", 0), e.get("confidence_uncapped"))}')
             rows.append(f'<div class="rleg"><span class="rmark {k}">{mk}</span>'
                         f'<div class="rleg-m"><div class="rleg-top">'
                         f'<span class="rleg-pick">{esc(e["game"])}</span>'
-                        f'<span class="rleg-est">{esc(det)}</span></div></div></div>')
+                        f'<span class="rleg-est">{det}</span></div></div></div>')
         outcome, top2 = R.parlay_outcome_for_date(
             [e for e in all_entries if e.get("date") == yesterday
              and R.tier_of(e) == "pick" and e.get("model") == "v4"])
@@ -759,8 +771,7 @@ a.leg:active .leg-bet, a.leg:hover .leg-bet { color:var(--accent); }
 .leg-mid { flex:1; display:flex; flex-direction:column; gap:1px; min-width:0; }
 .leg-bet { font:17px var(--mono); letter-spacing:-.01em; white-space:nowrap; }
 .leg-game { font-size:13px; color:var(--muted); white-space:nowrap; }
-.leg-right { display:flex; flex-direction:column; align-items:flex-end; gap:3px; }
-.leg-est { font:15px var(--mono); font-variant-numeric:tabular-nums; }
+.leg-right { display:flex; align-items:center; }
 /* chips + pills + meters */
 .chip { display:inline-block; font:11.5px var(--mono); color:var(--muted);
   border:1px solid var(--line); border-radius:999px; padding:2px 9px;
@@ -828,9 +839,7 @@ details.game > summary:focus-visible { outline:2px solid var(--accent);
   outline-offset:-2px; }
 details.game[open] {
   border-color:color-mix(in srgb,var(--accent) 45%,var(--line)); }
-.g-conf { display:flex; align-items:center; gap:7px; flex:none; }
-.g-confn { font:13px var(--mono); color:var(--muted);
-  font-variant-numeric:tabular-nums; }
+.g-conf { display:flex; align-items:center; flex:none; }
 .g-title { font:16px var(--disp); letter-spacing:.01em; white-space:nowrap; }
 .rk { font:11px var(--mono); color:var(--accent); white-space:nowrap; }
 .g-sub { font-size:13px; color:var(--muted); white-space:nowrap; }

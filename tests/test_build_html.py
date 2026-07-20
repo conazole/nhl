@@ -157,6 +157,9 @@ class TestPage(unittest.TestCase):
         self.assertIn('m.name="viewport"', page)
         # display shorthand: no year prefixes survive
         self.assertNotIn("2026-", page)
+        # the meter is the only confidence carrier · no "n/6" text anywhere
+        # (user 2026-07-20); the aria-label says "n of 6" instead
+        self.assertNotRegex(page, r"\d/6")
 
     def test_no_games_day_renders(self):
         data = {"error": "no games found", "target_date": "2026-06-12"}
@@ -168,7 +171,7 @@ class TestPage(unittest.TestCase):
     def test_content_lowercase(self):
         data = self._engine([matchup("A", "B", 5), matchup("C", "D", 4)])
         page = BH.build_page("2026-04-04", data, {}, [], mock=True)
-        for token in ("a @ b", "tonight · 1p u2.5", "parlays", "legs"):
+        for token in ("a @ b", ">u2.5<", "parlays", "legs"):
             self.assertIn(token, page)
         self.assertNotIn("A @ B", page)
 
