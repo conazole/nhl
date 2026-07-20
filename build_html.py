@@ -121,14 +121,17 @@ def short_time(utc_str):
     return t.replace(" pm et", "p").replace(" am et", "a")
 
 
-def mark_span(marks):
-    """✓/✗ streak marks as colored text (groups of 5 keep their gaps)."""
-    out = []
+def mark_span(marks, indexed=False):
+    """✓/✗ streak marks as colored text (groups of 5 keep their gaps).
+    indexed=True stamps each mark with data-row=n so a tap can jump to the
+    matching 15-game table row (the strip as an index, user 2026-07-20)."""
+    out, i = [], 0
     for ch in marks:
-        if ch == "✓":
-            out.append('<span class="mk-w">✓</span>')
-        elif ch == "✗":
-            out.append('<span class="mk-l">✗</span>')
+        if ch in "✓✗":
+            k = "w" if ch == "✓" else "l"
+            idx = f' data-row="{i}" role="button" tabindex="0"' if indexed else ""
+            out.append(f'<span class="mk-{k}"{idx}>{ch}</span>')
+            i += 1
         else:
             out.append(esc(ch))
     return "".join(out)
@@ -329,6 +332,28 @@ def leg_row(i, m, log_entry=None):
             f"</div></a>")
 
 
+def bet_window(legs):
+    """the pre-bet checklist on the slip (user feature 2026-07-20): one lamp
+    for goalie confirmations across both legs + a live countdown to the
+    first puck drop (js ticks it). dfo confirmation discipline is the house
+    rule · the 5 missed predictions went 1-4."""
+    unconfirmed = sum(1 for m in legs
+                      for c in (m.get("aw_confirmed"), m.get("hm_confirmed"))
+                      if not c)
+    if unconfirmed == 0:
+        lamp, txt = "w", "all goalies confirmed"
+    else:
+        lamp, txt = "p", f"{unconfirmed} unconfirmed · check dfo"
+    first = min(m["start_utc"] for m in legs)
+    # epoch ms, not the iso string · the page-wide year-strip shorthand
+    # would mangle "2026-..." inside the attribute and kill the countdown
+    epoch = int(datetime.fromisoformat(first.replace("Z", "+00:00")).timestamp() * 1000)
+    return (f'<div class="slip-win"><i class="lamp {lamp}"></i>'
+            f"<span>{esc(txt)}</span>"
+            f'<span class="slip-count" data-start="{epoch}">'
+            f"first puck {esc(short_time(first))}</span></div>")
+
+
 def build_ticket(legs, hms, matchups, log_by_game=None):
     # title is just "u2.5" · less is more (user 2026-07-20); the n/6 text next
     # to any meter was cut the same day · the meter alone carries confidence
@@ -338,7 +363,9 @@ def build_ticket(legs, hms, matchups, log_by_game=None):
             for i, m in enumerate(legs, 1))
         return (f'<section id="ticket"><div class="slip">'
                 f'<div class="slip-head"><span class="slip-title">u2.5</span>'
-                f'</div><div class="legs">{rows}</div></div></section>')
+                f'<button class="focusbtn" id="focusbtn" '
+                f'aria-label="focus the ticket">⤢</button></div>'
+                f'<div class="legs">{rows}</div>{bet_window(legs)}</div></section>')
     solo = [m for m in matchups if m["confidence"] >= 4]
     if not matchups:
         note = "no play tonight · 0 games scheduled"
@@ -512,12 +539,16 @@ def team_block(team, m, teams, line_lookup, side):
             f"r15 {t['r15_u25']}/15 ({t['r15_u25'] / 15 * 100:.0f}%) · "
             f"{venue_lbl} {t['venue_u25']}/{t['venue_total']} ({v_pct:.0f}%) · "
             f"wavg gf {t['wavg_gf']:.2f} · {t['sys_class']}")
-    return (f'<div class="gsec"><div class="gsec-h"><span>{esc(team_l)} · '
+    # per-team fold, closed by default (user 2026-07-20: both tables in one
+    # view ran too long) · the goalie row + streak strip stay visible as the
+    # summary; tapping a strip mark opens the fold and highlights its row
+    return (f'<details class="tfold"><summary><span class="tfold-t">{esc(team_l)} · '
             f"{esc(goalie)} · {esc(FO.pair_abbrev(cls))}{cchip}{echip}</span>"
-            f'<span class="mono strip15">{mark_span(strip)}</span></div>'
-            f'<div class="gsec-sub">{esc(bits)}</div>'
+            f'<span class="mono strip15">{mark_span(strip, indexed=True)}</span>'
+            f"</summary>"
+            f'<div class="tfold-b"><div class="gsec-sub">{esc(bits)}</div>'
             f"{last15_table(team, t, line_lookup)}"
-            f'<div class="gsec-rail">{esc(rail)}</div></div>')
+            f'<div class="gsec-rail">{esc(rail)}</div></div></details>')
 
 
 def context_rows(m, injuries, context_map):
@@ -577,6 +608,9 @@ def rank_chip(rankings, team):
     if row.get("gp"):
         ga = f"{row.get('ga_pg', 0):.2f}".rstrip("0").rstrip(".")
         tip_txt = f"u2.5 {row.get('u25')}/{row['gp']} · ga {ga}/gp"
+        d = row.get("delta7")
+        if d:                                  # rank movement vs a week ago
+            tip_txt += f" · {'↑' if d > 0 else '↓'}{abs(d)} wk"
         tip = (f' data-tip="{esc(tip_txt)}" tabindex="0" role="button" '
                f'aria-label="rank {r} · {esc(tip_txt)}"')
     return f' <span class="rk"{tip}>#{r}</span>'
@@ -632,6 +666,20 @@ def build_games(matchups, teams, line_lookup, injuries, context_map, tiers,
 _RES_MK = {"win": ("✓", "w"), "loss": ("✗", "l"), "void": ("v", "p")}
 
 
+def bust_chip(e):
+    """the loss's bust-taxonomy tag as a chip (tag_results.py wrote it to
+    the log) · months of postmortems become scannable. the bust_note rides
+    in the tap tooltip when present."""
+    reason = e.get("bust_reason")
+    if not reason or e.get("result") != "loss":
+        return ""
+    label = reason.replace("_", " ")
+    note = e.get("bust_note")
+    tip = (f' data-tip="{esc(note)}" tabindex="0" role="button" '
+           f'aria-label="{esc(label)} · {esc(note)}"') if note else ""
+    return f'<span class="chip bust"{tip}>{esc(label)}</span>'
+
+
 def build_yesterday(all_entries, yesterday, postmortem_text):
     yest = [e for e in all_entries
             if e.get("date") == yesterday and e.get("result") in ("win", "loss", "void")]
@@ -649,9 +697,10 @@ def build_yesterday(all_entries, yesterday, postmortem_text):
                 det = "postponed · excluded"
             else:
                 det = f'1p {e.get("actual_1p_total")} · conf {e.get("confidence")}'
+            tag = bust_chip(e)
             rows.append(f'<div class="rleg"><span class="rmark {k}">{mk}</span>'
                         f'<div class="rleg-m"><div class="rleg-top">'
-                        f'<span class="rleg-pick">{esc(e["game"])}</span>'
+                        f'<span class="rleg-pick">{esc(e["game"])}{tag}</span>'
                         f'<span class="rleg-est">{det}</span></div></div></div>')
         outcome, top2 = R.parlay_outcome_for_date(
             [e for e in all_entries if e.get("date") == yesterday
@@ -666,8 +715,9 @@ def build_yesterday(all_entries, yesterday, postmortem_text):
             if sub:
                 bits = " · ".join(
                     f'{esc(e["game"])} {mark_span("✓" if e["result"] == "win" else "✗")}'
-                    f' (1p {e.get("actual_1p_total")})' for e in sub
-                    if e["result"] != "void")
+                    f' (1p {e.get("actual_1p_total")})'
+                    + (f' {bust_chip(e)}' if e.get("bust_reason") else "")
+                    for e in sub if e["result"] != "void")
                 rows.append(f'<p class="resline"><span class="kv-k">{label}</span> {bits}</p>')
         parts.append("".join(rows))
     if postmortem_text:
@@ -839,6 +889,40 @@ a.leg:active .leg-bet, a.leg:hover .leg-bet { color:var(--accent); }
 .leg-bet { font:17px var(--mono); letter-spacing:-.01em; white-space:nowrap; }
 .leg-game { font-size:13px; color:var(--muted); white-space:nowrap; }
 .leg-right { display:flex; align-items:center; }
+/* bet window + focus */
+.slip-win { display:flex; align-items:center; gap:6px 9px; margin-top:11px;
+  padding-top:10px; border-top:1px dashed var(--line); flex-wrap:wrap;
+  font:12.5px var(--mono); color:var(--muted); }
+.slip-win .lamp { flex:none; }
+.slip-win > span:first-of-type { white-space:nowrap; }
+.slip-count { margin-left:auto; font-variant-numeric:tabular-nums;
+  white-space:nowrap; }
+.focusbtn { margin-left:auto; background:none; border:1px solid var(--line);
+  border-radius:8px; color:var(--accent); font:15px/1 var(--mono);
+  padding:6px 10px; cursor:pointer;
+  -webkit-tap-highlight-color:transparent; }
+.focusbtn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+body.tfocus nav, body.tfocus .totop,
+body.tfocus .wrap > :not(#ticket) { display:none; }
+body.tfocus .wrap { padding-top:16px; }
+/* per-team folds inside a game card */
+.tfold { border-top:1px solid var(--line); margin-top:16px; }
+.tfold > summary { display:flex; justify-content:space-between;
+  align-items:baseline; gap:10px; flex-wrap:wrap; cursor:pointer;
+  list-style:none; padding:12px 0 8px; font:12px var(--mono);
+  letter-spacing:.07em; }
+.tfold > summary::-webkit-details-marker { display:none; }
+.tfold > summary:focus-visible { outline:2px solid var(--accent);
+  outline-offset:-2px; }
+.tfold-t::before { content:"▸"; color:var(--accent); margin-right:8px;
+  font-family:var(--mono); display:inline-block; transition:transform .15s; }
+.tfold[open] > summary .tfold-t::before { transform:rotate(90deg); }
+@media (prefers-reduced-motion:reduce){ .tfold-t::before { transition:none; } }
+.tfold-b { overflow-x:auto; padding-bottom:4px; }
+.strip15 [data-row] { cursor:pointer; }
+tr.hl td { background:var(--accent-soft); }
+.chip.bust { color:var(--loss); border-color:var(--loss);
+  background:var(--loss-soft); }
 /* chips + pills + meters */
 .chip { display:inline-block; font:11.5px var(--mono); color:var(--muted);
   border:1px solid var(--line); border-radius:999px; padding:2px 9px;
@@ -1044,6 +1128,36 @@ JS = (
     "var m=d.scrollHeight-d.clientHeight;"
     'pb.style.transform="scaleX("+(m>0?d.scrollTop/m:0)+")";}'
     'addEventListener("scroll",u,{passive:true});u();})();'
+    # ticket focus mode: one button strips the page to just the slip
+    "(function(){"
+    'var b=document.getElementById("focusbtn");if(!b)return;'
+    'b.addEventListener("click",function(e){e.preventDefault();e.stopPropagation();'
+    'var on=document.body.classList.toggle("tfocus");'
+    'b.textContent=on?"✕":"⤢";'
+    'b.setAttribute("aria-label",on?"exit focus":"focus the ticket");});'
+    "})();"
+    # live countdown to the first puck drop (bet window)
+    "(function(){"
+    'var c=document.querySelector(".slip-count");if(!c)return;'
+    'var t=parseInt(c.getAttribute("data-start"),10);if(!t)return;'
+    "var base=c.textContent;"
+    "function u(){var d=t-Date.now();"
+    'if(d<=0){c.textContent=base+" · underway";return;}'
+    "var h=Math.floor(d/36e5),m=Math.floor((d%36e5)/6e4);"
+    'c.textContent=base+" · in "+(h>0?h+"h ":"")+m+"m";'
+    "setTimeout(u,30000);}u();})();"
+    # streak strip as an index: tapping a mark opens the team fold and
+    # flashes the matching table row (capture so the summary never toggles)
+    'document.addEventListener("click",function(e){'
+    'var mk=e.target.closest&&e.target.closest(".strip15 [data-row]");'
+    "if(!mk)return;e.preventDefault();e.stopPropagation();"
+    'var d=mk.closest("details.tfold");if(!d)return;d.open=true;'
+    'var rows=d.querySelectorAll("tbody tr");'
+    'var tr=rows[parseInt(mk.getAttribute("data-row"),10)];if(!tr)return;'
+    'd.querySelectorAll("tr.hl").forEach(function(x){x.classList.remove("hl");});'
+    'tr.classList.add("hl");'
+    'tr.scrollIntoView({behavior:"smooth",block:"nearest"});'
+    'setTimeout(function(){tr.classList.remove("hl");},2200);},true);'
     # rank-chip tooltip: the chip's u2.5 record on hover (desktop) or tap
     # (mobile). the tap is captured BEFORE the summary toggle so opening the
     # tip never opens/closes the accordion; any other tap or a scroll hides it.

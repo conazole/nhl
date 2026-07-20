@@ -480,12 +480,30 @@ def compute_team_rankings(target_date):
     """rolling last-{RANK_WINDOW}-games per-team 1p u2.5 ranking through
     target_date-1 (user 2026-07-20: teams change · current form beats a
     season-long running rank, and 15 matches the report's own window).
-    walks scoreboards backward via the same immutable 'scores' cache as
-    walk_scores, stopping once every team has a full window (or at the
-    season floor · early-season teams rank on the games they have). same
-    scope rules as the windows: OFF/FINAL games, gameType 2+3 only
-    (preseason excluded), olympic break skipped."""
-    progress(f"phase 1b: u2.5 form rankings (last {RANK_WINDOW})...")
+    each row also carries delta7 · rank movement vs the same ranking one
+    week earlier (positive = climbed), computed from the same cached walk
+    so the chip tooltip can say "↑4 wk". early-season teams rank on the
+    games they have."""
+    rankings = _rank_asof(target_date)
+    prev_date = (datetime.strptime(target_date, "%Y-%m-%d")
+                 - timedelta(days=7)).strftime("%Y-%m-%d")
+    if season_from_date(prev_date) == season_from_date(target_date):
+        prev = _rank_asof(prev_date, quiet=True)
+        for team, row in rankings.items():
+            p = prev.get(team)
+            if p:
+                row["delta7"] = p["rank"] - row["rank"]
+    return rankings
+
+
+def _rank_asof(target_date, quiet=False):
+    """the last-{RANK_WINDOW} ranking as of target_date-1. walks scoreboards
+    backward via the same immutable 'scores' cache as walk_scores, stopping
+    once every team has a full window (or at the season floor). same scope
+    rules as the windows: OFF/FINAL games, gameType 2+3 only (preseason
+    excluded), olympic break skipped."""
+    if not quiet:
+        progress(f"phase 1b: u2.5 form rankings (last {RANK_WINDOW})...")
     season_floor = datetime(season_from_date(target_date), 9, 15)
     ob = olympic_break(target_date)
     ob_start = datetime.strptime(ob[0], "%Y-%m-%d") if ob else None
@@ -542,7 +560,8 @@ def compute_team_rankings(target_date):
             break
         cur -= timedelta(days=1)
     rankings = rank_teams(stats)
-    progress(f"  {n_games} games walked, {len(rankings)} teams ranked")
+    if not quiet:
+        progress(f"  {n_games} games walked, {len(rankings)} teams ranked")
     return rankings
 
 

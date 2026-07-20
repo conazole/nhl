@@ -296,5 +296,55 @@ class TestBareLineNumbers(unittest.TestCase):
         self.assertNotIn("<th>notes</th>", glance)
 
 
+class TestBatch0720(unittest.TestCase):
+    def test_bet_window_lamp_states(self):
+        legs = [matchup("A", "B", 5), matchup("C", "D", 4)]
+        out = BH.bet_window(legs)          # fixture has 1 unconfirmed per leg
+        self.assertIn("2 unconfirmed · check dfo", out)
+        self.assertIn('lamp p', out)
+        # epoch ms, never the iso string (the year-strip shorthand would
+        # mangle it and kill the countdown)
+        self.assertRegex(out, r'data-start="\d{13}"')
+        for m in legs:
+            m["hm_confirmed"] = True
+        out = BH.bet_window(legs)
+        self.assertIn("all goalies confirmed", out)
+        self.assertIn('lamp w', out)
+
+    def test_rank_tip_carries_week_delta(self):
+        r = {"BUF": {"rank": 5, "gp": 15, "u25": 12, "ga_pg": 0.7, "delta7": 4},
+             "WSH": {"rank": 30, "gp": 15, "u25": 9, "ga_pg": 1.2, "delta7": -3}}
+        out = BH.title_html(matchup("BUF", "WSH", 1), r)
+        self.assertIn("↑4 wk", out)
+        self.assertIn("↓3 wk", out)
+
+    def test_bust_chip_on_losses_only(self):
+        e = log_entry("a @ b", result="loss")
+        e["bust_reason"] = "track_meet"
+        e["bust_note"] = "chances both ways all period"
+        chip = BH.bust_chip(e)
+        self.assertIn("track meet", chip)
+        self.assertIn('data-tip="chances both ways all period"', chip)
+        self.assertEqual(BH.bust_chip(log_entry("a @ b", result="win")), "")
+
+    def test_team_tables_fold_with_indexed_strip(self):
+        team = {"games": [{"date": "2026-04-02", "opp": "phi", "h_a": "a",
+                           "gf": 1, "ga": 0, "total_1p": 1, "u25": True,
+                           "score": "1-0", "wl": "w", "full_total": 6}],
+                "goalie_labels": ["s"], "goalie_per_game": ["gibson"],
+                "r5_u25": 4, "r15_u25": 12, "venue_u25": 5, "venue_total": 7,
+                "wavg_gf": 0.8, "sys_class": "structured", "tonight_ha": "h"}
+        m = matchup("DET", "NYR", 5)
+        out = BH.team_block("DET", m, {"DET": team}, {}, "away")
+        self.assertIn('<details class="tfold">', out)
+        self.assertNotIn("<details open", out)     # closed by default
+        self.assertIn('data-row="0"', out)         # tappable strip mark
+
+    def test_slip_has_focus_button(self):
+        legs = [matchup("A", "B", 5), matchup("C", "D", 4)]
+        out = BH.build_ticket(legs, [], legs)
+        self.assertIn('id="focusbtn"', out)
+
+
 if __name__ == "__main__":
     unittest.main()
