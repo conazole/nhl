@@ -593,17 +593,18 @@ def rank_chip(rankings, team):
             tip_txt += f" · {'↑' if d > 0 else '↓'}{abs(d)} wk"
         tip = (f' data-tip="{esc(tip_txt)}" tabindex="0" role="button" '
                f'aria-label="rank {r} · {esc(tip_txt)}"')
-    return f' <span class="rk"{tip}>#{r}</span>'
+    return f'<span class="rk"{tip}>#{r}</span>'
 
 
 def title_html(m, rankings):
-    """away and home in fixed sub-columns so the @ sits at the same x on
-    every card (user 2026-07-20 · abbrev/rank widths vary)."""
-    return (f'<span class="g-away">{esc(m["away"].lower())}'
-            f'{rank_chip(rankings, m["away"])}</span>'
+    """team, rank, @, team, rank each in a fixed sub-column so every element
+    sits at the same x on every card (user 2026-07-20 · two rounds: first
+    the @, then the residual whitespace)."""
+    return (f'<span class="g-away">{esc(m["away"].lower())}</span>'
+            f'<span class="g-rk">{rank_chip(rankings, m["away"])}</span>'
             f'<span class="g-at">@</span>'
-            f'<span class="g-home">{esc(m["home"].lower())}'
-            f'{rank_chip(rankings, m["home"])}</span>')
+            f'<span class="g-home">{esc(m["home"].lower())}</span>'
+            f'<span class="g-rk">{rank_chip(rankings, m["home"])}</span>')
 
 
 def game_card(m, teams, line_lookup, injuries, context_map, tiers, legs,
@@ -981,10 +982,10 @@ details.game[open] {
    (user 2026-07-20: "some are crooked") · widest real title ("chi #32 @
    sea #31") fits inside 150px */
 .g-title { font:16px var(--disp); letter-spacing:.01em; white-space:nowrap;
-  flex:0 0 140px; display:flex; align-items:baseline; }
-.g-away { flex:0 0 59px; white-space:nowrap; }
-.g-at { flex:0 0 16px; text-align:center; }
-.g-home { white-space:nowrap; margin-left:5px; }
+  flex:0 0 148px; display:flex; align-items:baseline; }
+.g-away, .g-home { flex:0 0 36px; white-space:nowrap; }
+.g-rk { flex:0 0 28px; white-space:nowrap; }
+.g-at { flex:0 0 18px; text-align:center; margin-right:4px; }
 .rk { font:11px var(--mono); color:var(--accent); white-space:nowrap; }
 .rk[data-tip] { cursor:pointer; text-decoration:underline dotted;
   text-underline-offset:3px;
