@@ -358,6 +358,15 @@ def build_ticket(legs, hms, matchups, log_by_game=None):
 
 
 # ---------------------------------------------------------------- slate + boards
+def fold(fid, title, body_html):
+    """collapsed-by-default table fold (user 2026-07-20: 'i want to look at
+    them when i choose, not on my face'). the generic hash handler opens it
+    when a nav link targets its id."""
+    fid_attr = f' id="{fid}"' if fid else ""
+    return (f'<details class="fold"{fid_attr}><summary>{esc(title)}</summary>'
+            f'<div class="fold-b">{body_html}</div></details>')
+
+
 def build_glance(matchups, tiers):
     if not matchups:
         return ""
@@ -375,10 +384,10 @@ def build_glance(matchups, tiers):
             f'<td>{esc(FO.pair_abbrev(f["goalie_pair"]))}</td>'
             f'<td class="num">{esc(short_time(m["start_utc"]))}</td>'
             f'<td>{st}{(" " + esc(tags)) if tags else ""}</td></tr>')
-    return (f'<section id="slate"><div class="board-t"><div class="scroll">'
-            f"<table><thead><tr><th>game</th><th>conf</th><th>line</th>"
-            f"<th>pair</th><th>start</th><th>notes</th></tr></thead>"
-            f'<tbody>{"".join(rows)}</tbody></table></div></div></section>')
+    table = (f'<div class="scroll"><table><thead><tr><th>game</th><th>conf</th>'
+             f"<th>line</th><th>pair</th><th>start</th><th>notes</th></tr>"
+             f'</thead><tbody>{"".join(rows)}</tbody></table></div>')
+    return f'<section>{fold("slate", f"slate · {len(matchups)}", table)}</section>'
 
 
 def display_tags(m):
@@ -390,10 +399,13 @@ def display_tags(m):
 def why_text(m):
     """miss_reason for the html surface · the leading n/6 and 'capped from
     n/6' are stripped because the adjacent meter (with its cap ghosts)
-    already carries both (user 2026-07-20)."""
+    already carries both, and column-implied words go too: 'night start' →
+    'night', 'line 6.5' → '6.5' (user 2026-07-20: start/line are known)."""
     why = FO.miss_reason(m) or FO.game_tags(m)
     why = re.sub(r"^capped from \d/6: ", "capped · ", why)
-    return re.sub(r"^\d/6 · ", "", why)
+    why = re.sub(r"^\d/6 · ", "", why)
+    why = why.replace("night start", "night")
+    return re.sub(r"\bline (\d+\.\d)", r"\1", why)
 
 
 def build_hm_avoid(hms, avoids):
@@ -405,9 +417,10 @@ def build_hm_avoid(hms, avoids):
             f'<td class="num">{conf_num(m["confidence"])}</td>'
             f"<td>{esc(why_text(m))}</td></tr>"
             for m in hms)
-        boards.append(f'<div class="board-t"><div class="board-h">hm · why it misses'
-                      f"</div><table><thead><tr><th>game</th><th>conf</th><th>why</th>"
-                      f'</tr></thead><tbody>{rows}</tbody></table></div>')
+        table = (f'<div class="scroll"><table><thead><tr><th>game</th><th>conf</th>'
+                 f'<th>why it misses</th></tr></thead><tbody>{rows}</tbody>'
+                 f"</table></div>")
+        boards.append(fold("hm", f"hm · {len(hms)}", table))
     if avoids:
         rows = []
         for m in avoids:
@@ -416,7 +429,7 @@ def build_hm_avoid(hms, avoids):
             if f.get("goalie", 0) < 0:
                 reasons.append(FO.pair_abbrev(f.get("goalie_pair")))
             if f.get("line", 0) < 0:
-                reasons.append(f"{FO.format_line(m['total_line'])} line")
+                reasons.append(FO.format_line(m["total_line"]))
             if f.get("r5", 1) == 0:
                 reasons.append(f"r5 {m['comb_r5_pct']:.0f}%")
             rows.append(
@@ -424,12 +437,13 @@ def build_hm_avoid(hms, avoids):
                 f"{esc(game_str(m))}</a></td>"
                 f'<td class="num">{conf_num(m["confidence"])}</td>'
                 f'<td>{esc(", ".join(reasons) if reasons else "low factors")}</td></tr>')
-        boards.append(f'<div class="board-t"><div class="board-h">avoid</div>'
-                      f"<table><thead><tr><th>game</th><th>conf</th><th>reason</th>"
-                      f'</tr></thead><tbody>{"".join(rows)}</tbody></table></div>')
+        table = (f'<div class="scroll"><table><thead><tr><th>game</th><th>conf</th>'
+                 f'<th>reason</th></tr></thead><tbody>{"".join(rows)}</tbody>'
+                 f"</table></div>")
+        boards.append(fold("avoid", f"avoid · {len(avoids)}", table))
     if not boards:
         return ""
-    return f'<section id="boards"><div class="board">{"".join(boards)}</div></section>'
+    return f'<section id="boards">{"".join(boards)}</section>'
 
 
 # ---------------------------------------------------------------- game cards
@@ -882,6 +896,20 @@ a.glink { color:inherit; text-decoration:underline dotted;
 a.glink:active, a.glink:hover { color:var(--accent); }
 .mk-w { color:var(--win); } .mk-l { color:var(--loss); }
 .mk-p { color:var(--void); }
+/* table folds · collapsed by default, tap to open */
+.fold { background:var(--surface); border:1px solid var(--line);
+  border-radius:12px; padding:0 15px; margin:8px 0;
+  box-shadow:var(--shadow); }
+.fold > summary { padding:13px 0; cursor:pointer; list-style:none;
+  display:flex; align-items:center; font:14.5px var(--disp); }
+.fold > summary::-webkit-details-marker { display:none; }
+.fold > summary::before { content:"▸"; color:var(--accent); margin-right:9px;
+  font-family:var(--mono); transition:transform .15s; }
+.fold[open] > summary::before { transform:rotate(90deg); }
+@media (prefers-reduced-motion:reduce){ .fold > summary::before { transition:none; } }
+.fold > summary:focus-visible { outline:2px solid var(--accent);
+  outline-offset:-2px; }
+.fold-b { padding:2px 0 13px; }
 /* game cards */
 .games { display:flex; flex-direction:column; gap:8px; }
 details.game { background:var(--surface); border:1px solid var(--line);
@@ -901,8 +929,9 @@ details.game[open] {
 .g-conf { display:flex; align-items:center; flex:none; }
 .g-title { font:16px var(--disp); letter-spacing:.01em; white-space:nowrap; }
 .rk { font:11px var(--mono); color:var(--accent); white-space:nowrap; }
-.rk[data-tip] { cursor:pointer; border-bottom:1px dotted
-  color-mix(in srgb,var(--accent) 55%,transparent); }
+.rk[data-tip] { cursor:pointer; text-decoration:underline dotted;
+  text-underline-offset:3px;
+  text-decoration-color:color-mix(in srgb,var(--accent) 55%,transparent); }
 /* iphone-first: thumb-size hit area without moving the visual (padding
    grown, margin pulls it back) · applies to every tappable tip source */
 [data-tip] { padding:8px 6px; margin:-8px -6px;
@@ -976,7 +1005,7 @@ footer { margin-top:48px; border-top:1px solid var(--line); padding-top:14px;
   @keyframes rise { from { opacity:0; transform:translateY(12px); } }
   .plate { animation:rise .5s cubic-bezier(.2,.7,.3,1) backwards; }
   #ticket .slip { animation:rise .5s cubic-bezier(.2,.7,.3,1) .08s backwards; }
-  #slate .board-t { animation:rise .5s cubic-bezier(.2,.7,.3,1) .16s backwards; }
+  details#slate { animation:rise .5s cubic-bezier(.2,.7,.3,1) .16s backwards; }
   @keyframes lampon { from { opacity:0; transform:scale(.4); } }
   .lamp { animation:lampon .4s ease .3s backwards; }
   @supports (interpolate-size: allow-keywords){

@@ -257,5 +257,31 @@ class TestLineDrift(unittest.TestCase):
         self.assertNotIn("drift", BH.leg_row(1, m, log_entry("a @ b")))
 
 
+class TestFoldsAndWhyShorthand(unittest.TestCase):
+    def test_tables_fold_closed_by_default(self):
+        ms = [matchup("A", "B", 5), matchup("C", "D", 4),
+              matchup("E", "F", 3), matchup("G", "H", 1)]
+        glance = BH.build_glance(ms, BH.tier_map(ms, [], "2026-04-04"))
+        self.assertIn('<details class="fold" id="slate">', glance)
+        self.assertNotIn("<details open", glance)
+        self.assertIn("slate · 4", glance)
+        boards = BH.build_hm_avoid([ms[2]], [ms[3]])
+        self.assertIn('id="hm"', boards)
+        self.assertIn("hm · 1", boards)
+        self.assertIn('id="avoid"', boards)
+        self.assertIn("avoid · 1", boards)
+
+    def test_why_text_drops_column_implied_words(self):
+        m = matchup("A", "B", 3,
+                    factors={"r5": 2, "day": 0, "goalie": 1, "line": 0,
+                             "goalie_pair": "starter+tandem"},
+                    total_line=6.0)
+        out = BH.why_text(m)
+        self.assertIn("night", out)
+        self.assertNotIn("night start", out)
+        self.assertNotIn("line 6.0", out)
+        self.assertIn("6.0", out)
+
+
 if __name__ == "__main__":
     unittest.main()

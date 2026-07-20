@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 95f506ec-b2b0-4acb-8d4a-cfc1761de2c0
-  modified: 2026-07-20T22:08:43.687Z
+  modified: 2026-07-20T22:20:03.798Z
 ---
 
 the daily report ships as a clickable html mirror (build_html.py, jul 20 2026), republished every run to ONE pinned claude.ai artifact url (in CLAUDE.md step 5 · never mint a new one). ported from the mlb repo's 2026-07-19/20 feature; the mechanics live in CLAUDE.md's "html mirror" section.
@@ -18,4 +18,4 @@ the daily report ships as a clickable html mirror (build_html.py, jul 20 2026), 
 
 **how to apply:** any change to the html goes through build_html.py + tests; a wrong number means fix the generator, never the html. republish always passes the pinned url.
 
-**interaction taste (jul 20 2026):** the user loved the rank-chip hover/tap record reveal ("did not even think of that") · prefer data-on-demand (tap to reveal detail) over printing more numbers inline. rows stay quiet; depth lives one tap away. confidence: meter on the ticket slip only, bare numbers elsewhere; no day tag (start time carries it); rankings are last-15 form, not season-long.
+**interaction taste (jul 20 2026):** the user loved the rank-chip hover/tap record reveal ("did not even think of that") · prefer data-on-demand (tap to reveal detail) over printing more numbers inline. rows stay quiet; depth lives one tap away. confidence: meter on the ticket slip only, bare numbers elsewhere; no day tag (start time carries it); rankings are last-15 form, not season-long. IPHONE-ONLY user · hover never works for them, tap is the only real interaction; big tap targets. secondary tables (slate/hm/avoid) fold closed by default ("look at them when i choose, not on my face") with counts on the summaries. never repeat a word a column header or context already implies: "night start"→"night", "line 6.5"→"6.5". they explicitly enjoy creative feature recommendations · offer one when it fits.
