@@ -1004,7 +1004,9 @@ details.game[open] {
   border:1px solid var(--line); border-radius:8px; padding:6px 11px;
   font:12px/1.5 var(--mono); color:var(--ink); box-shadow:var(--shadow);
   max-width:min(92vw, 340px); pointer-events:none; }
-.g-sub { font-size:13px; color:var(--muted); white-space:nowrap; }
+/* fixed slot so the conf column after it never drifts (user 2026-07-20) */
+.g-sub { font-size:13px; color:var(--muted); white-space:nowrap;
+  flex:0 0 56px; }
 .g-right { margin-left:auto; display:flex; align-items:center; }
 .g-time { font:13px var(--mono); color:var(--muted); margin-left:9px; }
 .g-body { padding:4px 17px 16px; border-top:1px solid var(--line); }
