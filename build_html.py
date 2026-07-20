@@ -606,9 +606,10 @@ def game_card(m, teams, line_lookup, injuries, context_map, tiers, legs,
     g = game_str(m)
     f = m["factors"]
     conf = m["confidence"]
+    # no bet badge on the row (user 2026-07-20: hated it) · the ticket names
+    # the legs and the pick panel inside the card marks them
     tag_chips = "".join(chip(t) for t in display_tags(m))
     tier = tiers[g]
-    badge = chip("bet", "bet") if tier == "pick" else ""
     r5_n = m.get("comb_r5_n", 10)
     r15_n = m.get("comb_r15_n", 30)
     r5_dd = f", {m.get('r5_shared', 0)} shared" if m.get("r5_shared") else ""
@@ -629,7 +630,7 @@ def game_card(m, teams, line_lookup, injuries, context_map, tiers, legs,
             f'<span class="g-title">{title_html(m, rankings)}</span>'
             f'<span class="g-sub">{esc(FO.format_line(m["total_line"]))} · '
             f'{esc(FO.pair_abbrev(f["goalie_pair"]))}</span>'
-            f'<span class="g-right">{badge}{tag_chips}<span class="g-time">'
+            f'<span class="g-right">{tag_chips}<span class="g-time">'
             f'{esc(short_time(m["start_utc"]))}</span></span></summary>'
             f'<div class="g-body">{"".join(body)}</div></details>')
 
