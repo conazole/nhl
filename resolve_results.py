@@ -28,7 +28,7 @@ import json, sys, urllib.request, argparse
 from datetime import datetime, timedelta
 
 from record import (read_log, write_log, compute_season_record,
-                    parlay_legs_for_date, check_invariants)
+                    parlay_outcome_for_date, tier_of, check_invariants)
 
 SCORE_URL = "https://api-web.nhle.com/v1/score/{}"
 BOXSCORE_URL = "https://api-web.nhle.com/v1/gamecenter/{}/boxscore"
@@ -236,16 +236,12 @@ def main():
     write_log(entries)
 
     # parlay result for yesterday specifically (the postmortem subject) ·
-    # scored on the top-2 legs, the same selection format_output displayed.
-    # use the full log entries so the sort key sees confidence + r5 + r15.
+    # graded by the shared rule over ALL of yesterday's picks: a lost top-2
+    # leg is a loss even if the other leg voided or is still pending.
     picks_y = [e for e in entries
-               if e["date"] == yesterday and "tier" not in e
-               and e.get("model") == "v4" and e.get("result") in ("win", "loss")]
-    if len(picks_y) >= 2:
-        top2 = parlay_legs_for_date(picks_y)
-        parlay_result = "win" if all(e["result"] == "win" for e in top2) else "loss"
-    else:
-        parlay_result = "no_parlay"
+               if e["date"] == yesterday and tier_of(e) == "pick"
+               and e.get("model") == "v4"]
+    parlay_result, _top2 = parlay_outcome_for_date(picks_y)
 
     record = compute_season_record(entries)
     warnings = check_invariants(entries, before_date=args.target_date)

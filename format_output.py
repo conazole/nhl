@@ -22,7 +22,8 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from collections import defaultdict
 
-from record import compute_season_record, pick_sort_key, parlay_legs_for_date
+from record import (compute_season_record, pick_sort_key,
+                    parlay_outcome_for_date, tier_of)
 
 ET_TZ = ZoneInfo("America/New_York")
 
@@ -304,7 +305,7 @@ def get_line_for_game(lookup, team_abbr, game):
 
 def format_postmortem(entries, yesterday, postmortem_text):
     yest = [e for e in entries
-            if e["date"] == yesterday and e.get("result") in ("win", "loss")]
+            if e["date"] == yesterday and e.get("result") in ("win", "loss", "void")]
     picks_y = [e for e in yest if "tier" not in e]
     hm_y = [e for e in yest if e.get("tier") == "honorable_mention"]
     avoid_y = [e for e in yest if e.get("tier") == "avoid"]
@@ -332,23 +333,30 @@ def format_postmortem(entries, yesterday, postmortem_text):
     # parlay legs first (the money), then the rest compactly
     if picks_y:
         for e in picks_y:
-            icon = "✓" if e["result"] == "win" else "✗"
-            out.append(f'{icon} {e["game"]} · {e["result"]} '
-                       f'(1p {e["actual_1p_total"]}, {e["confidence"]}/6)')
+            if e["result"] == "void":
+                out.append(f'- {e["game"]} · void (postponed, excluded)')
+            else:
+                icon = "✓" if e["result"] == "win" else "✗"
+                out.append(f'{icon} {e["game"]} · {e["result"]} '
+                           f'(1p {e["actual_1p_total"]}, {e["confidence"]}/6)')
         out.append("")
 
-    # parlay result · scored on the top-2 legs (what was actually bet)
-    if len(picks_y) >= 2:
-        top2 = parlay_legs_for_date(picks_y)
-        parlay_hit = all(e["result"] == "win" for e in top2)
-        icon = "✓" if parlay_hit else "✗"
-        word = "win" if parlay_hit else "loss"
-        losers = [e["game"] for e in top2 if e["result"] == "loss"]
-        if parlay_hit:
-            out.append(f"parlay: {icon} {word}")
-        else:
-            out.append(f"parlay: {icon} {word} ({', '.join(losers)} busted)")
-    elif len(picks_y) == 0:
+    # parlay result · shared grading rule (record.parlay_outcome_for_date):
+    # a lost top-2 leg = loss even when the other leg voided or is pending.
+    all_picks_y = [e for e in entries
+                   if e["date"] == yesterday and tier_of(e) == "pick"
+                   and e.get("model") == "v4"]
+    outcome, top2 = parlay_outcome_for_date(all_picks_y)
+    if outcome == "win":
+        out.append("parlay: ✓ win")
+    elif outcome == "loss":
+        losers = [e["game"] for e in top2 if e.get("result") == "loss"]
+        out.append(f"parlay: ✗ loss ({', '.join(losers)} busted)")
+    elif outcome == "void":
+        out.append("parlay: void (postponed leg) · excluded from record")
+    elif outcome == "pending":
+        out.append("parlay: unresolved · check resolve sweep")
+    elif len(all_picks_y) == 0:
         out.append("no parlay · no games hit ≥4/6")
     else:
         out.append("no parlay · only 1 leg")

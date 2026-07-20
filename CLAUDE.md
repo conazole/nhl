@@ -75,7 +75,19 @@ output rules
 
 email rules
 
-emails are DISABLED (apr 22 2026). skip the email step entirely · no picks email, no analysis email, no osascript, no quitting Mail.app. terminal output + saved analysis_{date}.md are the only deliverables.
+emails are DISABLED (apr 22 2026). skip the email step entirely · no picks email, no analysis email, no osascript, no quitting Mail.app. deliverables: terminal output, saved analysis_{date}.md, and the html mirror republished to the claude.ai artifact (step 5).
+
+---
+
+html mirror · build_html.py (user feature 2026-07-20, ported from the mlb repo)
+
+- a VIEW, never a second model path. consumes the SAME artifacts as format_output (/tmp/engine_clean.json + extras + picks_log + model_params + maintenance_state) and renders real components: masthead plate (games / parlays / legs cells + last-10 goal-lamp strip), ticket slip with deep-linking legs, at-a-glance table, hm/avoid boards, exclusive game accordion (details name=) with pick panels + real 15-game tables + colored streak marks, yesterday card, season card + night-by-night parlay ledger. every number comes from the artifacts · if something looks wrong, fix the generator, never the html.
+- freshness gate: refuses an engine json whose internal target_date differs from the run date (stale artifact). free text (postmortem) renders through a forgiving md fallback so content is never silently lost.
+- ticket lock: on live runs the displayed tiers come from picks_log for the date (the logged bet), so rebuilding/republishing can never disagree with logged bets · engine-side tiering (same shared sort key) covers mocks/replays. --out {path} = mock mode: no live archive writes, no log lock.
+- record integrity: masthead strip, season record, and ledger all grade through record.parlay_outcome_for_date · a lost leg plus a void/pending leg is a LOSS on every surface (top-2 selected BEFORE result filtering; win+void nights are void and excluded). covered by tests/.
+- artifact-host quirks handled in-page: no doctype/html/head/body skeleton, viewport meta injected into the real head at runtime, ALL in-page anchors (nav, slip legs, slate rows, back-to-top) navigate programmatically because the wrapper swallows hash navigation; a details target opens before scrolling.
+- design: "the rink" · cold ice grounds with a blue bias (day-ice light / night-rink dark, token-driven + data-theme override), steel-ice accent, center-line red only as the slip's leg divider, goal-lamp history dots, 6-segment confidence meters (ghost segments = capped-away points). NO bold anywhere · regular weight everywhere, hierarchy from size/letterspacing/color. all text roles >= 4.5:1 both themes; status colors always carry a symbol or word. display shorthand page-wide: s+s pairs, "7:00p" times (no " et"), no year prefixes. single-line rows never wrap · containers scroll sideways; sticky-left date column + section titles on sideways scroll. no legends, no glossary, no duplicated info between sections.
+- stable identity: <title>nhl 1p board</title> + 🏒 favicon, one artifact url pinned in step 5 · never mint a new one. run tests with python3 -m unittest discover -s tests after touching build_html.py or record.py.
 
 ---
 
@@ -179,11 +191,14 @@ cd /Users/raz/claude/nhl && python3 format_output.py {TARGET_DATE} /tmp/engine_c
 
 extras json: {"postmortem": "...", "injuries": {}, "context": {}}. prints the full analysis to terminal + saves analysis_{TARGET_DATE}.md. for mocks/replays add --out {path} · no live-archive writes, and never run update_log on a mock.
 
-step 5 · log + commit
+step 5 · log + html mirror + commit
 
 ```
 cd /Users/raz/claude/nhl && python3 update_log.py {TARGET_DATE} /tmp/engine_clean.json
+cd /Users/raz/claude/nhl && python3 build_html.py {TARGET_DATE} /tmp/engine_clean.json --extras '{EXTRAS_JSON}'
 ```
+
+build_html runs AFTER update_log so its ticket lock reads the freshly logged bet (see html mirror section). then publish via the Artifact tool: file_path = /Users/raz/claude/nhl/analysis_{TARGET_DATE}.html, favicon "🏒", and url = https://claude.ai/code/artifact/ff4d26da-4f8f-4b07-ac88-1a8ab604304e · ALWAYS pass this url so the user's saved link keeps working (omitting it from a new conversation mints a NEW url).
 
 git add + git commit + git push · always, no confirmation, author raz, no co-authored-by trailer.
 

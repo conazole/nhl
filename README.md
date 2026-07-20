@@ -59,6 +59,8 @@ step  script              what it does
 4     format_output.py    minimalist analysis file + typography sanitizer ·
                           --out for mocks (never touches the live archive)
 5     update_log.py       picks_log.jsonl upsert, 2-leg demotion, clv capture
+5b    build_html.py       html mirror of the report · republished to the
+                          pinned claude.ai artifact (the phone view)
 ```
 
 shared record math (season record, top-2 parlay scoring, deterministic pick ordering, log invariants) lives in record.py · imported by resolve_results, update_log, format_output, and close_line so the numbers can never drift apart.
@@ -102,6 +104,10 @@ format_output.py    minimalist analysis file · typography sanitizer, per-game
                     miss reasons, params footer, --out mock mode
 update_log.py       picks_log.jsonl upsert · 2-leg demotion, cap telemetry,
                     transparent clv capture
+build_html.py       clickable html mirror of the daily report · component ui
+                    over the same artifacts (never a second model path),
+                    ticket lock from picks_log, freshness gate, rink design
+                    system, artifact-host quirks handled in-page · tests/
 tag_results.py      structured bust-reason tags (fixed taxonomy)
 maintenance.py      self-fencing gate · auto-runs the weekly trio (7-day
                     counter) + the annual ritual (new-season counter) inside
@@ -136,6 +142,9 @@ maintenance_state.json   machine-written · last weekly sweep + last annual
                          ritual season · never hand-edited
 picks_log.jsonl          full pick history · factors, caps, results, clv
 analysis_{date}.md       daily analysis file (previous day's deleted each run)
+analysis_{date}.html     html mirror (previous day's deleted each run) ·
+                         republished to the pinned claude.ai artifact
+tests/                   unit tests · record grading rules + html builder
 research/mock_*.md       mock analysis files from replay/mock runs
 CLAUDE.md                single source of truth for all rules
 MODEL_REVIEW_2026-07.md  the jul 2026 audit · findings, drift experiments,
@@ -158,6 +167,7 @@ stack: nhl api (api-web.nhle.com, free) · moneypuck (xg + historical starters) 
 
 changelog
 
+- jul 20 2026 · html mirror + artifact publish (user feature, ported from the mlb repo's 2026-07-19/20 build). new build_html.py renders the daily report as a clickable website from the SAME artifacts as format_output (engine json + picks_log + params + maintenance state + extras) · a view, never a second model path. component ui: masthead plate with per-ticket record + last-10 goal-lamp strip, deep-linking ticket slip, at-a-glance table, hm/avoid boards, exclusive game accordion with pick panels + real 15-game tables + colored streak marks, yesterday card, season card + night-by-night parlay ledger. "the rink" design system (day-ice light / night-rink dark, no bold anywhere, all text >= 4.5:1, status colors never color-alone), artifact-host quirks handled in-page (runtime viewport injection, programmatic hash navigation). published to one pinned claude.ai artifact url every run (step 5 of the pipeline). record-integrity hardening shipped with it: new record.parlay_outcome_for_date grades a date's parlay from ALL of its picks with top-2 selected before result filtering · a lost leg plus a void/pending leg is now a loss on every surface (compute_season_record, resolve_results, format_output postmortem, html masthead/ledger), win+void nights are void and excluded, and a void leg can never promote the 3rd qualifier. historical record unchanged (18-5 parlays, 41-5 legs · verified). unit tests added under tests/ for the grading rule and the builder.
 - jul 3 2026 (v4.3.1 addendum) · self-fencing maintenance gate. new maintenance.py runs in step 1 of every /nhl run: a 7-day counter fires the weekly health trio (review.py, revalidate.py, season_review.py) and a season counter fires the full annual ritual on the first run of a new season, saving output to research/annual_ritual_{season}.txt. state lives in maintenance_state.json (machine-written) and the gate persists its summary there, so format_output renders the health block into the analysis file deterministically · no agent hand-copying. drift alerts + ritual status appear under the masthead; an incomplete annual ritual blocks betting until it passes. no cron · the checkups ride the runs, so they cannot be forgotten.
 - jul 3 2026 (v4.3.1) · the adaptivity release. no scoring change; every constant and claim now regenerates from evidence.
   - three loops closed. parameter loop: model_params.json emitted by research/emit_params.py from a new 5-season 6,992-game point-in-time backtest · engine/formatter/review/revalidate/season_review read it with fallbacks; the analysis footer shows validated-through. data loop: build_dataset.py parameterized by season (was frozen to 2025-26 four ways), moneypuck auto-download, espn stored pregame totals as the historical line source, --validate mode (2025 rebuild: zero score mismatches). judgment loop: named fail-closed caps logged with uncapped scores, tag_results.py bust taxonomy, season_review.py calibration report.

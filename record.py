@@ -77,6 +77,36 @@ def parlay_legs_for_date(picks):
     return sorted(picks, key=pick_sort_key)[:2]
 
 
+def parlay_outcome_for_date(picks):
+    """grade a date's parlay from ALL of that date's untiered picks, whatever
+    their result status. top-2 selection happens BEFORE any result filtering ·
+    a void or still-pending leg must never promote the 3rd qualifier into the
+    graded ticket or silently drop the night from the record (the mlb repo
+    shipped three copies of a "skip unsettled days" rule that flattered its
+    record until a 7-3 vs 6-4 mismatch surfaced · jul 2026).
+
+    returns (outcome, top2):
+      "no_parlay"  fewer than 2 picks logged
+      "loss"       any top-2 leg lost · a lost leg kills the ticket no matter
+                   what the other leg did (void and pending included)
+      "win"        both top-2 legs won
+      "pending"    no loss yet, at least one leg unresolved
+      "void"       no loss, nothing pending, at least one void · reduced
+                   ticket, excluded from counts like all voids
+    """
+    if len(picks) < 2:
+        return "no_parlay", sorted(picks, key=pick_sort_key)
+    top2 = parlay_legs_for_date(picks)
+    res = [e.get("result") for e in top2]
+    if "loss" in res:
+        return "loss", top2
+    if all(r == "win" for r in res):
+        return "win", top2
+    if any(r not in ("win", "void") for r in res):
+        return "pending", top2
+    return "void", top2
+
+
 def tier_of(e):
     t = e.get("tier")
     if t == "honorable_mention":
@@ -93,22 +123,24 @@ def is_resolved(e):
 def compute_season_record(entries, model="v4"):
     """compute season record for a model from log entries.
     parlays are scored on the top-2 legs per date (what was actually bet)."""
-    res = [e for e in entries if e.get("model") == model and is_resolved(e)]
+    mine = [e for e in entries if e.get("model") == model]
+    res = [e for e in mine if is_resolved(e)]
     picks = [e for e in res if tier_of(e) == "pick"]
     hm = [e for e in res if tier_of(e) == "hm"]
     avoid = [e for e in res if tier_of(e) == "avoid"]
 
+    # parlay grading sees EVERY pick of a date (resolved or not) so top-2
+    # selection can't drift when a leg is void/pending · see parlay_outcome_for_date
     parlay_dates = defaultdict(list)
-    for e in picks:
-        parlay_dates[e["date"]].append(e)
+    for e in mine:
+        if tier_of(e) == "pick":
+            parlay_dates[e["date"]].append(e)
     parlay_w = parlay_l = 0
     for legs in parlay_dates.values():
-        if len(legs) < 2:
-            continue
-        top2 = parlay_legs_for_date(legs)
-        if all(e["result"] == "win" for e in top2):
+        outcome, _ = parlay_outcome_for_date(legs)
+        if outcome == "win":
             parlay_w += 1
-        else:
+        elif outcome == "loss":
             parlay_l += 1
 
     return {
