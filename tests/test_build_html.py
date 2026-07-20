@@ -194,18 +194,24 @@ class TestFreshnessGate(unittest.TestCase):
 
 
 class TestRankChips(unittest.TestCase):
-    def test_summary_title_carries_ranks(self):
-        rankings = {"BUF": {"rank": 5}, "WSH": {"rank": 30}}
+    def test_summary_title_carries_ranks_with_record_tip(self):
+        rankings = {"BUF": {"rank": 5, "gp": 15, "u25": 12, "ga_pg": 0.667},
+                    "WSH": {"rank": 30, "gp": 15, "u25": 9, "ga_pg": 1.2}}
         m = matchup("BUF", "WSH", 1)
         out = BH.title_html(m, rankings)
-        self.assertIn('buf <span class="rk">#5</span>', out)
-        self.assertIn('wsh <span class="rk">#30</span>', out)
+        self.assertIn("#5", out)
+        self.assertIn("#30", out)
+        # the chip's u2.5 record rides in data-tip (hover/tap · user 2026-07-20)
+        self.assertIn('data-tip="u2.5 12/15 · ga 0.67/gp"', out)
+        self.assertIn('data-tip="u2.5 9/15 · ga 1.2/gp"', out)
 
     def test_missing_rankings_degrade_gracefully(self):
         m = matchup("BUF", "WSH", 1)
         self.assertEqual(BH.title_html(m, None), "buf @ wsh")
-        self.assertEqual(BH.title_html(m, {"BUF": {"rank": 5}}),
-                         'buf <span class="rk">#5</span> @ wsh')
+        # rank without stats → chip renders, no tip
+        out = BH.title_html(m, {"BUF": {"rank": 5}})
+        self.assertIn("#5", out)
+        self.assertNotIn("data-tip", out)
 
 
 class TestDisplayTags(unittest.TestCase):

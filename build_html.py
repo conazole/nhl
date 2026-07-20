@@ -521,8 +521,17 @@ def rank_chip(rankings, team):
     (current form beats a season-long running rank · user, same day).
     display context only, never scored. empty when the engine has no
     ranking for the team (old json, early season zero-gp)."""
-    r = (rankings or {}).get(team, {}).get("rank")
-    return f' <span class="rk">#{r}</span>' if r else ""
+    row = (rankings or {}).get(team) or {}
+    r = row.get("rank")
+    if not r:
+        return ""
+    tip = ""
+    if row.get("gp"):
+        ga = f"{row.get('ga_pg', 0):.2f}".rstrip("0").rstrip(".")
+        tip_txt = f"u2.5 {row.get('u25')}/{row['gp']} · ga {ga}/gp"
+        tip = (f' data-tip="{esc(tip_txt)}" tabindex="0" role="button" '
+               f'aria-label="rank {r} · {esc(tip_txt)}"')
+    return f' <span class="rk"{tip}>#{r}</span>'
 
 
 def title_html(m, rankings):
@@ -855,6 +864,14 @@ details.game[open] {
 .g-conf { display:flex; align-items:center; flex:none; }
 .g-title { font:16px var(--disp); letter-spacing:.01em; white-space:nowrap; }
 .rk { font:11px var(--mono); color:var(--accent); white-space:nowrap; }
+.rk[data-tip] { cursor:pointer; border-bottom:1px dotted
+  color-mix(in srgb,var(--accent) 55%,transparent); }
+.rk[data-tip]:focus-visible { outline:2px solid var(--accent);
+  outline-offset:2px; }
+.tip { position:fixed; z-index:30; background:var(--surface2);
+  border:1px solid var(--line); border-radius:8px; padding:6px 11px;
+  font:12px var(--mono); color:var(--ink); box-shadow:var(--shadow);
+  white-space:nowrap; pointer-events:none; }
 .g-sub { font-size:13px; color:var(--muted); white-space:nowrap; }
 .g-right { margin-left:auto; display:flex; align-items:center; }
 .g-time { font:13px var(--mono); color:var(--muted); margin-left:9px; }
@@ -958,6 +975,33 @@ JS = (
     "var m=d.scrollHeight-d.clientHeight;"
     'pb.style.transform="scaleX("+(m>0?d.scrollTop/m:0)+")";}'
     'addEventListener("scroll",u,{passive:true});u();})();'
+    # rank-chip tooltip: the chip's u2.5 record on hover (desktop) or tap
+    # (mobile). the tap is captured BEFORE the summary toggle so opening the
+    # tip never opens/closes the accordion; any other tap or a scroll hides it.
+    # hover previews, tap pins: mobile browsers fire a synthetic mouseover
+    # right before the tap, so a naive click-toggle hides the tip the moment
+    # it appears · the stuck flag separates the two.
+    "(function(){"
+    'var tip=document.createElement("div");tip.className="tip";tip.hidden=true;'
+    "document.body.appendChild(tip);var cur=null,stuck=false;"
+    "function show(el){tip.textContent=el.getAttribute(\"data-tip\");"
+    "tip.hidden=false;var r=el.getBoundingClientRect();"
+    "var x=Math.min(Math.max(8,r.left+r.width/2-tip.offsetWidth/2),"
+    "innerWidth-tip.offsetWidth-8);"
+    'tip.style.left=x+"px";tip.style.top=(r.bottom+7)+"px";cur=el;}'
+    "function hide(){tip.hidden=true;cur=null;stuck=false;}"
+    'document.addEventListener("click",function(e){'
+    'var el=e.target.closest&&e.target.closest("[data-tip]");'
+    "if(el){e.preventDefault();e.stopPropagation();"
+    "if(cur===el&&stuck){hide();}else{show(el);stuck=true;}}"
+    "else hide();},true);"
+    'document.addEventListener("mouseover",function(e){'
+    'var el=e.target.closest&&e.target.closest("[data-tip]");'
+    "if(el&&!stuck)show(el);});"
+    'document.addEventListener("mouseout",function(e){'
+    'if(!stuck&&e.target.closest&&e.target.closest("[data-tip]"))hide();});'
+    'addEventListener("scroll",hide,{passive:true});'
+    "})();"
     # scrollspy: light the nav link for the section in view
     "(function(){"
     "if(!window.IntersectionObserver)return;"
