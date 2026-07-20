@@ -632,10 +632,11 @@ def game_card(m, teams, line_lookup, injuries, context_map, tiers, legs,
     body.append(team_block(m["home"], m, teams, line_lookup, "home"))
     body.append(context_rows(m, injuries, context_map))
     return (f'<details class="game" id="{game_anchor(g)}" name="game-acc">'
-            f'<summary><span class="g-conf">{conf_num(conf)}</span>'
+            f'<summary>'
             f'<span class="g-title">{title_html(m, rankings)}</span>'
             f'<span class="g-sub">{esc(FO.format_line(m["total_line"]))} · '
             f'{esc(FO.pair_abbrev(f["goalie_pair"]))}</span>'
+            f'<span class="g-conf">{conf_num(conf)}</span>'
             f'<span class="g-right">{tag_chips}<span class="g-time">'
             f'{esc(short_time(m["start_utc"]))}</span></span></summary>'
             f'<div class="g-body">{"".join(body)}</div></details>')
